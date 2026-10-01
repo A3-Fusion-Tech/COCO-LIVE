@@ -2,7 +2,7 @@
 
 ## 1. Current state
 
-The monorepo layout, domain rules, API, worker and web server are implemented as dependency-free TypeScript run directly by Node 22. Storage is in-memory and messaging uses a console adapter; see [implementation-status.md](../delivery/implementation-status.md).
+The monorepo layout, domain rules, PostgreSQL persistence, API, worker and web/PWA are implemented in TypeScript run directly by Node 22. Messaging uses a console adapter and object storage is local disk; see [implementation-status.md](../delivery/implementation-status.md).
 
 ## 2. Bootstrap checklist (status)
 
@@ -25,6 +25,13 @@ The first implementation pull request should:
 - Console/no-op messaging adapters are the default locally.
 
 ## 4. Database workflow
+
+- Start PostgreSQL with `docker compose up -d db`; set `DATABASE_URL`.
+- `npm run db:migrate` applies migrations; the API also migrates at start and takes a writer lock (a second API process on the same database refuses to start).
+- `npm run db:reset` drops and recreates the schema of an explicitly local database only; `npm run seed` adds synthetic actors.
+- Tests that need Postgres create and drop an isolated schema per test.
+
+Original guidelines:
 
 - Migrations are source-controlled and applied automatically to disposable local/test databases.
 - Seed only canonical catalog and synthetic development actors.

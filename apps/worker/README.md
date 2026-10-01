@@ -19,3 +19,5 @@ DATA_GOV_IN_API_KEY=... npm run dev:worker
 ```
 
 `src/agmarknet.ts` is the data.gov.in adapter; `src/jobs.ts` contains the idempotent ingest and maintenance (expiry, aggregation, alerts) jobs.
+
+Jobs: AGMARKNET ingest, maintenance tick (expiry, aggregates, alerts, media scan, retention purge) and outbox delivery through provider adapters (`SMS_PROVIDER=console` for development). The worker talks to the API only through `/v1/internal/*` with `INTERNAL_API_TOKEN`.

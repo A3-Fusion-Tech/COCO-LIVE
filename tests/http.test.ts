@@ -58,6 +58,15 @@ test("OTP requests are rate limited per phone", async () => {
   } finally { close(); }
 });
 
+test("OTP limits are per phone; users sharing one network address are not locked out by each other", async () => {
+  const { call, close } = await boot();
+  try {
+    const statuses: number[] = [];
+    for (let i = 0; i < 12; i++) statuses.push((await call("POST", "/v1/auth/otp/request", { phone: `98000001${String(i).padStart(2, "0")}` })).status);
+    assert.deepEqual([...new Set(statuses)], [200]);
+  } finally { close(); }
+});
+
 test("idempotency: same key replays, different payload conflicts, missing key rejected", async () => {
   const { w, call, close } = await boot();
   try {

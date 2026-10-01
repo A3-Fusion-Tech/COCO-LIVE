@@ -42,7 +42,7 @@ export function renderPricesPage(items: PriceItem[], msp: { productId: string; a
 .card{border:1px solid #888;border-radius:.5rem;padding:1rem;margin:.75rem 0}.range{display:flex;gap:1rem;margin:0}.range dt{font-size:.8rem}.range dd{margin:0;font-size:1.25rem;font-weight:700}
 .meta{color:#444;font-size:.9rem;margin:.25rem 0}.fresh-stale{border-style:dashed}.note,.disclaimer{background:#fff7d6;padding:.5rem;border-radius:.25rem}
 a,button{min-height:44px;display:inline-flex;align-items:center}@media (prefers-color-scheme:dark){body{background:#111;color:#eee}.meta{color:#bbb}.note,.disclaimer{background:#333}}</style></head>
-<body><header><h1>${esc(t(locale, "price.title"))}</h1><a href="/?lang=${other}" hreflang="${other}">${other === "ta" ? "தமிழ்" : "English"}</a></header>
+<body><header><h1>${esc(t(locale, "price.title"))}</h1><a href="/?lang=${other}" hreflang="${other}">${other === "ta" ? "தமிழ்" : "English"}</a> · <a href="/app/">${locale === "ta" ? "உள்நுழை / செயலி" : "Sign in / open app"}</a></header>
 <p class="disclaimer" role="note">${esc(t(locale, "price.not_offer"))}</p>
 <main>${items.length ? items.map((i) => renderCard(i, locale)).join("\n") : `<p>${esc(t(locale, "price.insufficient"))}</p>`}</main>
 <aside><h2>MSP</h2><p class="meta">${esc(t(locale, "price.msp_note"))}</p><ul>${msp.map((m) => `<li>${esc(m.productId)}: ${formatMoney(m.amountPaise, locale)} / ${esc(t(locale, `unit.${m.unit}`))} — ${esc(m.seasonLabel)}</li>`).join("")}</ul></aside>

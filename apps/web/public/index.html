@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ta">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LiveCoco</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/app/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app/app.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="top">
+    <a class="brand" href="#/prices">LiveCoco</a>
+    <nav id="nav" aria-label="Main"></nav>
+    <button id="lang" type="button" aria-label="Language"></button>
+  </header>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <main id="main" tabindex="-1"><p>Loading…</p></main>
+  <noscript>This application needs JavaScript. Public prices are available at <a href="/">the price page</a>.</noscript>
+  <script type="module" src="/app/app.js"></script>
+</body>
+</html>

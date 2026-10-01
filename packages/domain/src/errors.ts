@@ -2,6 +2,8 @@ export class DomainError extends Error {
   readonly code: string;
   readonly status: number;
   readonly messageKey: string;
+  /** Security-relevant state (e.g. failed OTP attempts) changed before this error and must be committed, not rolled back. */
+  persistState = false;
   constructor(code: string, status: number, message: string, messageKey = `error.${code.toLowerCase()}`) {
     super(message);
     this.name = "DomainError";

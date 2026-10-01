@@ -1,3 +1,6 @@
+import { uid as mkId } from "./ids.ts";
+import { Fulfilment } from "./fulfilment.ts";
+import { TrackedMap } from "../../../packages/database/src/tracked.ts";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   DomainError, conflict, forbidden, invalid, notFound,
@@ -29,7 +32,7 @@ export interface User {
   createdAt: string;
 }
 export interface Session { token: string; userId: string; createdAt: string; stepUpUntil: number; revoked: boolean; device: string }
-export interface Organization { organizationId: string; name: string; kind: "FARMER_GROUP" | "FPO" | "TRADER" | "PROCESSOR" | "BUYER"; members: { userId: string; role: "OWNER" | "MEMBER" | "FINANCE" | "VERIFIER" }[] }
+export interface Organization { organizationId: string; name: string; kind: "FARMER_GROUP" | "FPO" | "TRADER" | "PROCESSOR" | "BUYER" | "INSPECTION_PARTNER" | "LOGISTICS_PARTNER"; members: { userId: string; role: "OWNER" | "MEMBER" | "FINANCE" | "VERIFIER" }[] }
 export type ClaimType = "MOBILE_CONTROL" | "PERSON_IDENTITY" | "ORGANIZATION_EXISTENCE" | "ORGANIZATION_MEMBERSHIP" | "BUSINESS_DOCUMENT" | "FSSAI_DOCUMENT" | "GST_DOCUMENT" | "MARKET_LICENSE_DOCUMENT" | "PAYMENT_DESTINATION" | "PRICE_CONTRIBUTOR_SCOPE" | "LOT_STOCK";
 export type ClaimStatus = "NOT_STARTED" | "EVIDENCE_REQUESTED" | "SUBMITTED" | "IN_REVIEW" | "NEEDS_MORE_INFORMATION" | "APPROVED" | "REJECTED" | "EXPIRED" | "REVOKED";
 export interface VerificationClaim { claimId: string; userId: string; type: ClaimType; scope: Record<string, string>; status: ClaimStatus; evidenceIds: string[]; verifiedAt: string | undefined; expiresAt: string | undefined; decidedBy: string | undefined; reasonCode: string | undefined }
@@ -40,6 +43,7 @@ export interface SourceHealthRecord { source: string; lastAttemptAt: string | un
 export interface AlertSubscription { alertId: string; userId: string; productId: ProductId; marketId: string; unit: Unit; stage: MarketStage; direction: "ABOVE" | "BELOW" | "BULLETIN"; thresholdPaise: number | undefined; channel: "SMS" | "WHATSAPP" | "PUSH"; consentAt: string; status: "ACTIVE" | "PAUSED" | "CANCELLED"; lastTriggeredKey: string | undefined }
 export interface Notification { notificationId: string; userId: string; channel: string; template: string; data: Record<string, unknown>; dedupeKey: string; at: string }
 export interface QueueItem { queueItemId: string; queue: "PRICE_REVIEW" | "MAPPING" | "VERIFICATION" | "LISTING_REVIEW" | "DISPUTE" | "RISK"; subject: string; summary: string; reasons: string[]; priority: number; createdAt: string; requiredCapability: Capability; status: "OPEN" | "DONE" }
+export interface OutboxItem { notificationId: string; userId: string; channel: string; template: string; data: Record<string, unknown>; status: "PENDING" | "LEASED" | "SENT" | "DEAD"; attempts: number; nextAttemptAt: string; leaseUntil: string | undefined; lastError: string | undefined; sentAt: string | undefined; createdAt: string }
 export interface Thread { threadId: string; sellLotId: string; sellerId: string; buyerId: string; offerIds: string[]; contactRevealed: boolean }
 export interface Report { reportId: string; reporterId: string; subjectUserId: string; reason: string; at: string }
 
@@ -48,6 +52,8 @@ export interface Config {
   operators: Record<string, Capability[]>; // phone → capabilities
   otpTtlMs: number;
   otpMaxPerHour: number;
+  /** Per client address (shared NAT is common, so this is looser than the per-phone limit). */
+  otpMaxPerHourPerDevice: number;
   stepUpMs: number;
   contactRevealPerDay: number;
   acceptanceWindowFallbackHours: number;
@@ -60,6 +66,7 @@ export const defaultConfig = (): Config => ({
   operators: {},
   otpTtlMs: 5 * 60_000,
   otpMaxPerHour: 5,
+  otpMaxPerHourPerDevice: 30,
   stepUpMs: 15 * 60_000,
   contactRevealPerDay: 10,
   acceptanceWindowFallbackHours: 48,
@@ -68,7 +75,7 @@ export const defaultConfig = (): Config => ({
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const eq = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
-const uid = (prefix: string) => `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+const uid = mkId;
 
 export function normalizePhone(raw: string): string {
   const digits = raw.replace(/[^\d+]/g, "");
@@ -80,39 +87,56 @@ export function normalizePhone(raw: string): string {
 
 export class Platform {
   readonly cfg: Config;
-  users = new Map<string, User>();
+  /** Persistent tables (see packages/database): every durable collection is registered here. */
+  readonly tables = new Map<string, TrackedMap<any>>();
+  readonly logs: Record<"audit" | "notifications" | "reputation" | "reveals" | "reports", unknown[]> = { audit: [], notifications: [], reputation: [], reveals: [], reports: [] };
+  table<V>(name: string): TrackedMap<V> { const t = new TrackedMap<V>(name); this.tables.set(name, t); return t; }
+  users = this.table<User>("users");
   phoneIndex = new Map<string, string>();
-  sessions = new Map<string, Session>();
-  otps = new Map<string, { hash: string; expires: number; attempts: number; used: boolean }>();
-  otpRequests = new Map<string, number[]>();
-  orgs = new Map<string, Organization>();
-  claims = new Map<string, VerificationClaim>();
-  evidence = new Map<string, Evidence>();
-  audit: AuditEntry[] = [];
-  raw = new Map<string, RawRecord>();
-  observations = new Map<string, PriceObservation>();
-  aggregates = new Map<string, Aggregate[]>(); // bucket → history (latest last)
-  unpublishable = new Map<string, PriceObservation[]>();
-  sourceHealth = new Map<string, SourceHealthRecord>();
+  sessions = this.table<Session>("sessions");
+  otps = this.table<{ hash: string; expires: number; attempts: number; used: boolean }>("otps");
+  otpRequests = this.table<number[]>("otpRequests");
+  orgs = this.table<Organization>("orgs");
+  claims = this.table<VerificationClaim>("claims");
+  evidence = this.table<Evidence>("evidence");
+  audit: AuditEntry[] = this.logs.audit as AuditEntry[];
+  raw = this.table<RawRecord>("raw");
+  observations = this.table<PriceObservation>("observations");
+  aggregates = this.table<Aggregate[]>("aggregates"); // bucket → history (latest last)
+  sourceHealth = this.table<SourceHealthRecord>("sourceHealth");
   msp: MspReference[] = [{ productId: "prod_milling_copra", unit: "QUINTAL", amountPaise: 1158200, seasonLabel: "2025 season (policy reference)", isMarketQuote: false }];
-  alerts = new Map<string, AlertSubscription>();
-  notifications: Notification[] = [];
-  queue = new Map<string, QueueItem>();
-  lots = new Map<string, SellLot>();
-  requirements = new Map<string, BuyRequirement>();
-  templates = new Map<string, RecurrenceTemplate>();
-  threads = new Map<string, Thread>();
-  offers = new Map<string, Offer>();
-  deals = new Map<string, Deal>();
-  disputes = new Map<string, Dispute>();
-  reputation: ReputationEvent[] = [];
-  reveals: { at: number; by: string; of: string; reason: string }[] = [];
-  reports: Report[] = [];
-  idempotency = new Map<string, { hash: string; result: unknown }>();
+  alerts = this.table<AlertSubscription>("alerts");
+  notifications: Notification[] = this.logs.notifications as Notification[];
+  queue = this.table<QueueItem>("queue");
+  lots = this.table<SellLot>("lots");
+  requirements = this.table<BuyRequirement>("requirements");
+  templates = this.table<RecurrenceTemplate>("templates");
+  threads = this.table<Thread>("threads");
+  offers = this.table<Offer>("offers");
+  deals = this.table<Deal>("deals");
+  disputes = this.table<Dispute>("disputes");
+  reputation: ReputationEvent[] = this.logs.reputation as ReputationEvent[];
+  reveals: { at: number; by: string; of: string; reason: string }[] = this.logs.reveals as { at: number; by: string; of: string; reason: string }[];
+  reports: Report[] = this.logs.reports as Report[];
+  idempotency = this.table<{ hash: string; at?: number; result: unknown }>("idempotency");
+  /** Transactional outbox (ADR-004): written in the same transaction as the state change that caused it. */
+  outbox = this.table<OutboxItem>("outbox");
   correlationId = "req_internal";
+  /** Release D: partners, inspections, logistics, FPO aggregation, settlements, media. */
+  readonly fx: Fulfilment = new Fulfilment(this);
 
   constructor(cfg: Partial<Config> = {}) {
     this.cfg = { ...defaultConfig(), ...cfg };
+  }
+
+  /** Rebuild derived indexes and re-freeze immutable history after loading from storage. */
+  rehydrate() {
+    this.phoneIndex.clear();
+    for (const u of this.users.values()) this.phoneIndex.set(u.phone, u.userId);
+    const freeze = (o: object) => { Object.freeze(o); for (const v of Object.values(o)) if (v && typeof v === "object" && !Object.isFrozen(v)) freeze(v); };
+    for (const o of this.offers.values()) freeze(o.terms);
+    for (const d of this.deals.values()) { d.cards.forEach(freeze); d.events.forEach(freeze); }
+    for (const t of this.tables.values()) t.resetTracking();
   }
   now() { return this.cfg.clock(); }
   iso() { return this.now().toISOString(); }
@@ -121,7 +145,7 @@ export class Platform {
   log(actorId: string, action: string, subject: string, reason?: string, meta: Record<string, unknown> = {}) {
     this.audit.push({ seq: this.audit.length + 1, at: this.iso(), actorId, action, subject, reason, correlationId: this.correlationId, meta });
   }
-  private enqueue(i: Omit<QueueItem, "queueItemId" | "createdAt" | "status">) {
+  enqueue(i: Omit<QueueItem, "queueItemId" | "createdAt" | "status">) {
     const id = uid("q");
     this.queue.set(id, { ...i, queueItemId: id, createdAt: this.iso(), status: "OPEN" });
     return id;
@@ -132,9 +156,9 @@ export class Platform {
   requestOtp(rawPhone: string, device = "unknown"): { sent: true } {
     const phone = normalizePhone(rawPhone);
     const now = this.now().getTime();
-    for (const key of [`p:${phone}`, `d:${device}`]) {
+    for (const [key, max] of [[`p:${phone}`, this.cfg.otpMaxPerHour], [`d:${device}`, this.cfg.otpMaxPerHourPerDevice]] as const) {
       const recent = (this.otpRequests.get(key) ?? []).filter((t) => now - t < 3_600_000);
-      if (recent.length >= this.cfg.otpMaxPerHour) throw new DomainError("RATE_LIMITED", 429, "Too many requests", "error.rate_limited");
+      if (recent.length >= max) throw new DomainError("RATE_LIMITED", 429, "Too many requests", "error.rate_limited");
       this.otpRequests.set(key, [...recent, now]);
     }
     const code = String(100000 + (randomBytes(4).readUInt32BE() % 900000));
@@ -146,7 +170,7 @@ export class Platform {
   verifyOtp(rawPhone: string, code: string, device = "unknown"): { token: string; user: User } {
     const phone = normalizePhone(rawPhone);
     const rec = this.otps.get(phone);
-    const bad = () => new DomainError("OTP_INVALID", 401, "The code is invalid or expired", "error.otp_invalid");
+    const bad = () => Object.assign(new DomainError("OTP_INVALID", 401, "The code is invalid or expired", "error.otp_invalid"), { persistState: true });
     if (!rec || rec.used || rec.expires < this.now().getTime() || rec.attempts >= 5) throw bad();
     rec.attempts++;
     if (!eq(rec.hash, sha(`${phone}:${code}`))) throw bad();
@@ -291,7 +315,9 @@ export class Platform {
   // ---- notifications --------------------------------------------------
   notify(userId: string, channel: string, template: string, data: Record<string, unknown>, dedupeKey: string) {
     if (this.notifications.some((n) => n.userId === userId && n.dedupeKey === dedupeKey)) return false;
-    this.notifications.push({ notificationId: uid("n"), userId, channel, template, data, dedupeKey, at: this.iso() });
+    const n = { notificationId: uid("n"), userId, channel, template, data, dedupeKey, at: this.iso() };
+    this.notifications.push(n);
+    this.outbox.set(n.notificationId, { notificationId: n.notificationId, userId, channel, template, data, status: "PENDING", attempts: 0, nextAttemptAt: n.at, leaseUntil: undefined, lastError: undefined, sentAt: undefined, createdAt: n.at });
     return true;
   }
 
@@ -306,7 +332,8 @@ export class Platform {
       return prev.result as T;
     }
     const result = fn();
-    this.idempotency.set(k, { hash, result });
+    // Store a JSON snapshot so a retry returns the original outcome, not the entity's later state.
+    this.idempotency.set(k, { hash, at: this.now().getTime(), result: JSON.parse(JSON.stringify(result ?? null)) });
     return result;
   }
 
@@ -634,12 +661,12 @@ export class Platform {
     const completed = this.reputation.filter((e) => e.partyId === userId && e.type === "DEAL_COMPLETED").length;
     return { active: !!u, suspended: u?.suspended ?? true, blocked: u?.blocked ?? [], claims, completedDeals: completed };
   }
-  private lotLocation(l: SellLot) { return l.preciseLocation ?? (MARKETS[l.originMarketId] as { lat: number; lon: number }); }
-  private isVerifiedParty(userId: string) { return this.hasClaim(userId, "PERSON_IDENTITY") || this.hasClaim(userId, "ORGANIZATION_EXISTENCE"); }
-  private getLot(id: string) { return this.lots.get(id) ?? (() => { throw notFound("Sell lot"); })(); }
-  private getReq(id: string) { return this.requirements.get(id) ?? (() => { throw notFound("Requirement"); })(); }
-  private getOffer(id: string) { return this.offers.get(id) ?? (() => { throw notFound("Offer"); })(); }
-  private getDeal(id: string) { return this.deals.get(id) ?? (() => { throw notFound("Deal"); })(); }
+  lotLocation(l: SellLot) { return l.preciseLocation ?? (MARKETS[l.originMarketId] as { lat: number; lon: number }); }
+  isVerifiedParty(userId: string) { return this.hasClaim(userId, "PERSON_IDENTITY") || this.hasClaim(userId, "ORGANIZATION_EXISTENCE"); }
+  getLot(id: string) { return this.lots.get(id) ?? (() => { throw notFound("Sell lot"); })(); }
+  getReq(id: string) { return this.requirements.get(id) ?? (() => { throw notFound("Requirement"); })(); }
+  getOffer(id: string) { return this.offers.get(id) ?? (() => { throw notFound("Offer"); })(); }
+  getDeal(id: string) { return this.deals.get(id) ?? (() => { throw notFound("Deal"); })(); }
   private expectVersion(actual: number, expected: number | undefined) {
     if (expected !== undefined && expected !== actual) throw conflict("VERSION_CONFLICT", "The resource was changed by someone else");
   }
@@ -653,7 +680,7 @@ export class Platform {
     this.lots.set(lot.sellLotId, lot);
     return lot;
   }
-  private ownLot(user: User, id: string) {
+  ownLot(user: User, id: string) {
     const l = this.getLot(id);
     if (l.sellerId !== user.userId && !(l.organizationId && this.orgs.get(l.organizationId)?.members.some((m) => m.userId === user.userId))) throw notFound("Sell lot");
     return l;
@@ -846,7 +873,7 @@ export class Platform {
     this.notify(user.userId === prev.sellerId ? prev.buyerId : prev.sellerId, "SMS", "offer.countered", { offerId: o.offerId }, `offer:${o.offerId}`);
     return o;
   }
-  private assertParty(user: User, o: { sellerId: string; buyerId: string }) {
+  assertParty(user: User, o: { sellerId: string; buyerId: string }) {
     if (user.userId !== o.sellerId && user.userId !== o.buyerId) throw notFound("Offer");
   }
   rejectOffer(user: User, offerId: string) {
@@ -930,12 +957,12 @@ export class Platform {
   }
 
   // ---- deals ---------------------------------------------------------
-  private event(d: Deal, type: DealEventType, actorId: string, data?: Record<string, unknown>) {
+  event(d: Deal, type: DealEventType, actorId: string, data?: Record<string, unknown>) {
     const ev: DealEvent = { seq: d.events.length + 1, type, actorId, at: this.iso(), ...(data ? { data } : {}) };
     d.events.push(Object.freeze(ev) as DealEvent);
     d.version++;
   }
-  private dealParty(user: User, id: string) { const d = this.getDeal(id); if (d.sellerId !== user.userId && d.buyerId !== user.userId) throw notFound("Deal"); return d; }
+  dealParty(user: User, id: string) { const d = this.getDeal(id); if (d.sellerId !== user.userId && d.buyerId !== user.userId) throw notFound("Deal"); return d; }
   getDeal2(user: User, id: string, op?: { session: Session }) {
     const d = this.deals.get(id) ?? (() => { throw notFound("Deal"); })();
     if (d.sellerId === user.userId || d.buyerId === user.userId) return d;
@@ -975,7 +1002,7 @@ export class Platform {
     this.event(d, "AMENDMENT_ACCEPTED", user.userId, { revision: prev.revision + 1 });
     return d;
   }
-  private moveDeal(d: Deal, to: Deal["status"], type: DealEventType, actor: string, data?: Record<string, unknown>) {
+  moveDeal(d: Deal, to: Deal["status"], type: DealEventType, actor: string, data?: Record<string, unknown>) {
     assertDealTransition(d.status, to);
     d.status = to;
     this.event(d, type, actor, data);
@@ -1016,14 +1043,18 @@ export class Platform {
     for (const p of [d.sellerId, d.buyerId]) this.reputation.push({ partyId: p, type: "DEAL_COMPLETED", dealId, at: this.iso() });
     return d;
   }
-  cancelDeal(user: User, dealId: string, reason: string) {
-    const d = this.dealParty(user, dealId);
-    if (!reason) throw invalid("REASON_REQUIRED", "A cancellation reason is required");
-    this.moveDeal(d, "CANCELLED", "CANCELLED", user.userId, { reason });
+  /** Give a cancelled deal's quantity back to its lot. */
+  releaseReservation(d: Deal) {
     const lot = this.getLot(d.sellLotId);
     lot.quantityReserved = subtractQuantity(lot.quantityReserved, currentCard(d).terms.quantity);
     lot.status = lot.status === "SOLD" ? lot.status : toMilli(lot.quantityReserved) === 0n ? "ACTIVE" : "RESERVED";
     lot.version++;
+  }
+  cancelDeal(user: User, dealId: string, reason: string) {
+    const d = this.dealParty(user, dealId);
+    if (!reason) throw invalid("REASON_REQUIRED", "A cancellation reason is required");
+    this.moveDeal(d, "CANCELLED", "CANCELLED", user.userId, { reason });
+    this.releaseReservation(d);
     this.reputation.push({ partyId: user.userId, type: "CANCELLED_BY_PARTY", dealId, at: this.iso() });
     return d;
   }
@@ -1062,7 +1093,7 @@ export class Platform {
     this.notify(respondent, "SMS", "dispute.opened", { disputeId: dis.disputeId, dueAt: dis.responseDueAt }, `dispute:${dis.disputeId}`);
     return dis;
   }
-  disputeBefore = new Map<string, Deal["status"]>();
+  disputeBefore = this.table<Deal["status"]>("disputeBefore");
   respondDispute(user: User, disputeId: string, text: string, evidenceIds: string[] = []) {
     const dis = this.disputes.get(disputeId) ?? (() => { throw notFound("Dispute"); })();
     if (dis.respondent !== user.userId) throw notFound("Dispute");
@@ -1091,6 +1122,49 @@ export class Platform {
     return dis;
   }
   getDispute(user: User, id: string) { const dis = this.disputes.get(id); if (!dis || (dis.openedBy !== user.userId && dis.respondent !== user.userId)) throw notFound("Dispute"); return dis; }
+
+  /** One scheduler tick; every step is idempotent so overlapping or repeated ticks are safe. */
+  maintenanceTick() {
+    const expiry = this.runExpiry();
+    const aggregatesChanged = this.refreshAggregates();
+    const alertsSent = this.evaluateAlerts();
+    return { ...expiry, aggregatesChanged, alertsSent };
+  }
+
+  /** Worker claims due outbox items under a lease; expired leases are retried, so delivery is at-least-once. */
+  claimOutbox(limit = 20) {
+    const now = this.now().getTime();
+    const due = [...this.outbox.values()]
+      .filter((o) => (o.status === "PENDING" && Date.parse(o.nextAttemptAt) <= now) || (o.status === "LEASED" && o.leaseUntil !== undefined && Date.parse(o.leaseUntil) <= now))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.notificationId.localeCompare(b.notificationId))
+      .slice(0, Math.min(limit, 100));
+    return due.map((o) => {
+      o.status = "LEASED"; o.leaseUntil = new Date(now + 5 * 60_000).toISOString();
+      const u = this.users.get(o.userId);
+      return { notificationId: o.notificationId, to: u?.phone ?? null, locale: u?.locale ?? "ta", channel: o.channel, template: o.template, data: o.data, attempt: o.attempts + 1 };
+    });
+  }
+  ackOutbox(notificationId: string, ok: boolean, error = "") {
+    const o = this.outbox.get(notificationId) ?? (() => { throw notFound("Outbox item"); })();
+    if (o.status === "SENT" || o.status === "DEAD") return o; // duplicate acks are harmless
+    if (ok) { o.status = "SENT"; o.sentAt = this.iso(); o.leaseUntil = undefined; return o; }
+    o.attempts++; o.lastError = error.slice(0, 200); o.leaseUntil = undefined;
+    if (o.attempts >= 5) { o.status = "DEAD"; this.enqueue({ queue: "RISK", subject: notificationId, summary: "Notification delivery failed permanently", reasons: ["DELIVERY_DEAD"], priority: 3, requiredCapability: "ops.source_health" }); }
+    else { o.status = "PENDING"; o.nextAttemptAt = new Date(this.now().getTime() + 2 ** o.attempts * 60_000).toISOString(); }
+    return o;
+  }
+
+  /** Retention: remove expired OTPs, stale rate-limit windows, long-revoked sessions and old idempotency keys. */
+  purgeStaleSecurityState() {
+    const now = this.now().getTime();
+    let otps = 0, windows = 0, sessions = 0, keys = 0;
+    for (const [k, o] of [...this.otps]) if (o.used || o.expires + 3_600_000 < now) { this.otps.delete(k); otps++; }
+    for (const [k, ts] of [...this.otpRequests]) if (ts.every((t) => now - t > 3_600_000)) { this.otpRequests.delete(k); windows++; }
+    for (const [k, sess] of [...this.sessions]) if (sess.revoked && now - Date.parse(sess.createdAt) > 30 * 86_400_000) { this.sessions.delete(k); sessions++; }
+    for (const [k, i] of [...this.idempotency]) if (i.at !== undefined && now - i.at > 7 * 86_400_000) { this.idempotency.delete(k); keys++; }
+    for (const [k, o] of [...this.outbox]) if (o.status === "SENT" && now - Date.parse(o.sentAt ?? o.createdAt) > 30 * 86_400_000) this.outbox.delete(k);
+    return { otpsPurged: otps, rateWindowsPurged: windows, sessionsPurged: sessions, idempotencyKeysPurged: keys };
+  }
 
   // ---- reputation & ops ----------------------------------------------
   publicReputation(partyId: string) { return reputationSummary(this.reputation, partyId); }
