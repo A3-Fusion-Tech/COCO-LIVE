@@ -127,7 +127,9 @@ route("POST", "/ops/disputes/:id/resolve", { shape: { outcome: is.string, reason
 route("POST", "/ops/users/:id/suspend", { shape: { reason: is.string } }, ({ p, user, session, params, body }) => (p.suspendUser(user, session, params.id as string, body.reason), { ok: true }));
 
 // ---- server --------------------------------------------------------------
-export interface ServerOptions { platform: Platform; logger?: Logger; metrics?: Metrics; maxBodyBytes?: number; requestsPerMinute?: number }
+/** Runs one request's platform work as a single durable unit (see ADR-007); in-memory by default. */
+export type Atomic = <T>(fn: () => T) => T;
+export interface ServerOptions { platform: Platform; logger?: Logger; metrics?: Metrics; maxBodyBytes?: number; requestsPerMinute?: number; atomic?: Atomic }
 
 export function createApp(opts: ServerOptions): Server {
   const { platform: p } = opts;
@@ -136,6 +138,7 @@ export function createApp(opts: ServerOptions): Server {
   const buckets = new Map<string, { n: number; reset: number }>();
   const limit = opts.requestsPerMinute ?? 300;
   const maxBody = opts.maxBodyBytes ?? 256 * 1024;
+  const atomic: Atomic = opts.atomic ?? ((fn) => fn());
 
   const send = (res: ServerResponse, status: number, body: unknown, cid: string, extra: Record<string, string> = {}) => {
     const data = JSON.stringify(body);
@@ -179,15 +182,17 @@ export function createApp(opts: ServerOptions): Server {
         const errs = check(body, match.shape);
         if (errs.length) return fail(422, "VALIDATION_FAILED", "Validation failed", "Some fields are invalid", errs, "error.validation_failed");
       }
-      let user: User | undefined, session: Session | undefined;
-      if (match.auth) {
-        const auth = req.headers.authorization;
-        ({ user, session } = p.authenticate(auth?.startsWith("Bearer ") ? auth.slice(7) : undefined));
-      }
-      const ifMatchHeader = req.headers["if-match"];
-      const ctx = { p, body, params, query: url.searchParams, user: user as User, session: session as Session, locale, idemKey: req.headers["idempotency-key"] as string | undefined, ifMatch: ifMatchHeader ? Number(String(ifMatchHeader).replace(/"/g, "")) : undefined } satisfies Ctx;
-      const run = () => match.h(ctx);
-      const out = match.idem ? p.idempotent(user?.userId ?? ip, `${req.method} ${url.pathname}`, ctx.idemKey, body, run) : run();
+      const out = atomic(() => {
+        let user: User | undefined, session: Session | undefined;
+        if (match.auth) {
+          const auth = req.headers.authorization;
+          ({ user, session } = p.authenticate(auth?.startsWith("Bearer ") ? auth.slice(7) : undefined));
+        }
+        const ifMatchHeader = req.headers["if-match"];
+        const ctx = { p, body, params, query: url.searchParams, user: user as User, session: session as Session, locale, idemKey: req.headers["idempotency-key"] as string | undefined, ifMatch: ifMatchHeader ? Number(String(ifMatchHeader).replace(/"/g, "")) : undefined } satisfies Ctx;
+        const run = () => match.h(ctx);
+        return match.idem ? p.idempotent(user?.userId ?? ip, `${req.method} ${url.pathname}`, ctx.idemKey, body, run) : run();
+      });
       metrics.inc(`http.${req.method}.ok`);
       if (out && typeof out === "object" && "status" in out && "body" in out) return send(res, (out as { status: number }).status, (out as { body: unknown }).body, cid);
       return send(res, 200, out, cid, !match.auth ? { "x-public": "1" } : {});

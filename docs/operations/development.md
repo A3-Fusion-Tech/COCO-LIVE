@@ -2,7 +2,7 @@
 
 ## 1. Current state
 
-The monorepo layout, domain rules, API, worker and web server are implemented as dependency-free TypeScript run directly by Node 22. Storage is in-memory and messaging uses a console adapter; see [implementation-status.md](../delivery/implementation-status.md).
+The monorepo layout, domain rules, API, worker and web server are implemented as dependency-free TypeScript run directly by Node 22. State is persisted to a local SQLite file (`LIVECOCO_DB_PATH`, default `.data/livecoco.sqlite`) shared by the API and worker, and messaging uses a console adapter; see [implementation-status.md](../delivery/implementation-status.md).
 
 ## 2. Bootstrap checklist (status)
 
@@ -11,7 +11,7 @@ The first implementation pull request should:
 1. ✅ Node ≥ 22 pinned in `package.json` engines and CI.
 2. ✅ `apps/web`, `apps/api` and `apps/worker` exist alongside their README context.
 3. ✅ Strict shared TypeScript configuration (`tsconfig.base.json`) and a dependency-free lint script.
-4. ⏳ Local PostgreSQL/PostGIS and Redis environment — not yet; persistence is in-memory.
+4. ⏳ Local PostgreSQL/PostGIS and Redis environment — not yet; pilot persistence is SQLite ([ADR-007](../decisions/007-sqlite-pilot-persistence.md)). Delete `.data/` to reset local state.
 5. ✅ Health (`/healthz` style) and readiness endpoints; ⏳ migrations (no database yet).
 6. ✅ Root scripts run real commands.
 7. ✅ CI (`.github/workflows/ci.yml`) for lint, typecheck, test and documentation links.

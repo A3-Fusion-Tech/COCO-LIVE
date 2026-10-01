@@ -9,6 +9,7 @@ This document states precisely what is implemented, how it is verified, and what
 | `packages/domain` | Money/quantity, catalog, price validation, anomaly signals, weighted-median aggregation and confidence, listing/offer/deal/dispute rules, matching, reputation |
 | `packages/localization` | Tamil and English catalogs (parity-tested), INR/date formatting |
 | `packages/contracts` | Problem responses, cursor pagination, request validation helpers |
+| `packages/database` | SQLite unit-of-work store shared by API and worker ([ADR-007](../decisions/007-sqlite-pilot-persistence.md)) |
 | `packages/observability` | Redacting JSON logger, counters, correlation IDs |
 | `packages/test-support` | Fake clock, world builder, sample terms |
 | `apps/api` | `Platform` (application services) and the `/v1` HTTP server — see [endpoints](../api/endpoints.md) |
@@ -39,7 +40,7 @@ This document states precisely what is implemented, how it is verified, and what
 - Operator queues, step-up authorization, per-capability access, audited privileged actions.
 
 ## Not implemented / simulated
-- **Persistence:** all state is in memory (`Platform` maps). Acceptance is atomic because it is one synchronous unit; a database implementation must use row-locked transactions as described in [marketplace.md](../domain/marketplace.md). Migrations, PostGIS and the transactional outbox ([ADR 004](../decisions/004-transactional-outbox.md)) are therefore pending.
+- **Persistence:** state is durable in one SQLite file shared by the API and worker on a single host ([ADR-007](../decisions/007-sqlite-pilot-persistence.md)); each request or worker step is one `BEGIN IMMEDIATE` transaction, so acceptance stays atomic across processes. PostgreSQL/PostGIS with row-locked transactions as described in [marketplace.md](../domain/marketplace.md), migrations and the transactional outbox ([ADR 004](../decisions/004-transactional-outbox.md)) are still pending and needed before running more than one API instance.
 - **Providers:** OTP/SMS/WhatsApp use a console adapter; no media upload/scanning pipeline (evidence is metadata/notes); no object storage.
 - **Release D** (inspection partners, logistics quotes, FPO aggregation and settlement export) and Phase 5 settlement are intentionally out of scope.
 - **Web:** only the public price page and PWA shell exist. Authenticated farmer/buyer screens from [mobile-app-flow.md](../product/mobile-app-flow.md) and the operations console UI are not built; the API supports them.
@@ -47,4 +48,4 @@ This document states precisely what is implemented, how it is verified, and what
 - Tamil copy requires human review before launch.
 
 ## Verification
-`npm test` runs 40 tests: domain invariants (order independence, unit incompatibility, duplication, staleness), the price pipeline, marketplace/deal/dispute flows, authorization and step-up, idempotency, rate limits, HTTP contracts, the worker adapter and the Tamil/English web page. `npm run typecheck` uses strict TypeScript (`erasableSyntaxOnly`, `noUncheckedIndexedAccess`).
+`npm test` runs 45 tests: domain invariants (order independence, unit incompatibility, duplication, staleness), the price pipeline, marketplace/deal/dispute flows, authorization and step-up, idempotency, rate limits, HTTP contracts, the worker adapter, the Tamil/English web page, and persistence (cross-process visibility, restart, failed-operation commits). `npm run typecheck` uses strict TypeScript (`erasableSyntaxOnly`, `noUncheckedIndexedAccess`).
