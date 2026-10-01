@@ -75,7 +75,7 @@ live-coco/
 - Node.js 22.18 or newer (runs TypeScript natively; no build step, no runtime dependencies)
 - `typescript` and `@types/node` only for `npm run typecheck` (`npm install --no-save typescript @types/node`)
 
-Production hardening (PostgreSQL/PostGIS, Redis queue, object storage, SMS provider) is described in [implementation-status.md](./docs/delivery/implementation-status.md).
+The API and worker share state through a SQLite file at `LIVECOCO_DB_PATH` (default `.data/livecoco.sqlite`; delete it to reset). Production hardening (PostgreSQL/PostGIS, Redis queue, object storage, SMS provider) is described in [implementation-status.md](./docs/delivery/implementation-status.md).
 
 ## Configuration
 
@@ -87,7 +87,7 @@ Copy `.env.example` to an untracked local environment file once services exist. 
 npm run dev          # API on :4000 (OTPs are printed to the console in development)
 npm run dev:worker   # ingestion, expiry, alerts (needs DATA_GOV_IN_API_KEY for AGMARKNET)
 npm run dev:web      # Tamil/English price pages on :3000 (API_BASE_URL -> API)
-npm test             # 40 unit, integration and HTTP tests
+npm test             # 45 unit, integration, HTTP and persistence tests
 npm run lint
 npm run typecheck
 npm run docs:check
