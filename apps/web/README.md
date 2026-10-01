@@ -9,3 +9,11 @@ The web workspace will provide:
 
 Implementation must follow [the product requirements](../../docs/product/requirements.md), [API conventions](../../docs/api/conventions.md) and [privacy controls](../../docs/security/privacy.md).
 
+
+## Running
+
+```text
+API_BASE_URL=http://localhost:4000 npm run dev:web
+```
+
+Implemented: the public Tamil/English price page (`/?lang=ta|en`), web manifest and offline-cache service worker. Authenticated flows and the operations console are not yet built.
