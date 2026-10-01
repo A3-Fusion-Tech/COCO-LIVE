@@ -8,12 +8,18 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "node ./scripts/not-bootstrapped.mjs dev",
-    "build": "node ./scripts/not-bootstrapped.mjs build",
-    "test": "node ./scripts/not-bootstrapped.mjs test",
-    "lint": "node ./scripts/not-bootstrapped.mjs lint",
-    "typecheck": "node ./scripts/not-bootstrapped.mjs typecheck",
+    "dev": "node ./apps/api/src/main.ts",
+    "dev:worker": "node ./apps/worker/src/main.ts",
+    "dev:web": "node ./apps/web/src/server.ts",
+    "build": "tsc -p tsconfig.check.json",
+    "test": "node --test --test-reporter=spec \"tests/**/*.test.ts\"",
+    "lint": "node ./scripts/lint.mjs",
+    "typecheck": "tsc -p tsconfig.check.json",
     "docs:check": "node ./scripts/check-doc-links.mjs"
+  },
+  "type": "module",
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
   }
 }
-

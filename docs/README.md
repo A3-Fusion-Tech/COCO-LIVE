@@ -21,6 +21,7 @@
 
 - [API conventions](./api/conventions.md)
 - [API resource model](./api/resources.md)
+- [Implemented endpoints](./api/endpoints.md)
 - [Testing strategy](./testing/strategy.md)
 - [Development onboarding](./operations/development.md)
 - [Price-source runbook](./operations/price-source-runbook.md)
@@ -30,6 +31,7 @@
 
 - [Threat model](./security/threat-model.md)
 - [Privacy and retention](./security/privacy.md)
+- [Implementation status](./delivery/implementation-status.md)
 - [Delivery roadmap](./delivery/roadmap.md)
 - [Release gates](./delivery/release-gates.md)
 - [Architecture decisions](./decisions/README.md)

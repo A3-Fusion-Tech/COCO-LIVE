@@ -2,20 +2,20 @@
 
 ## 1. Current state
 
-The repository is documentation-first. The monorepo layout, contracts and domain rules are defined, but application frameworks and dependencies have not been generated.
+The monorepo layout, domain rules, API, worker and web server are implemented as dependency-free TypeScript run directly by Node 22. Storage is in-memory and messaging uses a console adapter; see [implementation-status.md](../delivery/implementation-status.md).
 
-## 2. First bootstrap change
+## 2. Bootstrap checklist (status)
 
 The first implementation pull request should:
 
-1. Pin Node and pnpm versions for contributors and CI.
-2. Generate `apps/web`, `apps/api` and `apps/worker` without deleting their README context.
-3. Establish shared lint, format and TypeScript configuration.
-4. Add a local PostgreSQL/PostGIS and Redis development environment.
-5. Add migrations and a health/readiness endpoint.
-6. Replace placeholder root scripts with working recursive commands.
-7. Add CI for install, lint, typecheck, test, build and documentation links.
-8. Add secret scanning and dependency review.
+1. ✅ Node ≥ 22 pinned in `package.json` engines and CI.
+2. ✅ `apps/web`, `apps/api` and `apps/worker` exist alongside their README context.
+3. ✅ Strict shared TypeScript configuration (`tsconfig.base.json`) and a dependency-free lint script.
+4. ⏳ Local PostgreSQL/PostGIS and Redis environment — not yet; persistence is in-memory.
+5. ✅ Health (`/healthz` style) and readiness endpoints; ⏳ migrations (no database yet).
+6. ✅ Root scripts run real commands.
+7. ✅ CI (`.github/workflows/ci.yml`) for lint, typecheck, test and documentation links.
+8. ⏳ Secret scanning and dependency review (no dependencies to review yet).
 
 ## 3. Local configuration
 

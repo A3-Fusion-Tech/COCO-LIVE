@@ -17,7 +17,7 @@ LiveCoco does not present one context-free “live price.” Every published pri
 
 ## Repository status
 
-This repository currently contains the product research, system architecture and implementation-ready documentation. Application packages are scaffolded but intentionally contain no framework-generated code yet. The first engineering milestone is the price-intelligence vertical slice described in [docs/delivery/roadmap.md](./docs/delivery/roadmap.md).
+The documented system is implemented as a dependency-free TypeScript reference implementation covering Release A (price board), Release B (assisted leads) and Release C (structured deals) per [docs/delivery/roadmap.md](./docs/delivery/roadmap.md). See [docs/delivery/implementation-status.md](./docs/delivery/implementation-status.md) for exactly what exists, what is simulated (in-memory storage, console messaging) and what remains before production.
 
 ## Repository map
 
@@ -72,15 +72,10 @@ live-coco/
 
 ## Local prerequisites
 
-Planned tooling:
+- Node.js 22.18 or newer (runs TypeScript natively; no build step, no runtime dependencies)
+- `typescript` and `@types/node` only for `npm run typecheck` (`npm install --no-save typescript @types/node`)
 
-- Node.js LTS
-- pnpm
-- Docker Desktop or another container runtime
-- PostgreSQL with PostGIS
-- Redis-compatible queue/cache
-
-Exact runtime and framework versions will be pinned when the first application package is generated. Do not install global framework CLIs into the repository.
+Production hardening (PostgreSQL/PostGIS, Redis queue, object storage, SMS provider) is described in [implementation-status.md](./docs/delivery/implementation-status.md).
 
 ## Configuration
 
@@ -88,17 +83,17 @@ Copy `.env.example` to an untracked local environment file once services exist. 
 
 ## Development workflow
 
-The intended workflow after application bootstrapping is:
-
 ```text
-pnpm install
-pnpm dev
-pnpm test
-pnpm lint
-pnpm typecheck
+npm run dev          # API on :4000 (OTPs are printed to the console in development)
+npm run dev:worker   # ingestion, expiry, alerts (needs DATA_GOV_IN_API_KEY for AGMARKNET)
+npm run dev:web      # Tamil/English price pages on :3000 (API_BASE_URL -> API)
+npm test             # 40 unit, integration and HTTP tests
+npm run lint
+npm run typecheck
+npm run docs:check
 ```
 
-Until application packages are generated, the root scripts intentionally print guidance instead of pretending that build/test commands exist.
+Set `OPERATOR_PHONES=+91XXXXXXXXXX` to grant operator capabilities to a development account (operator endpoints still require OTP step-up).
 
 ## Documentation ownership
 
