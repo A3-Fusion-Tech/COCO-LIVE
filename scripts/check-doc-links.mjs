@@ -2,7 +2,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 
 const root = resolve(process.cwd());
-const ignoredDirectories = new Set([".git", "node_modules", "dist", "build"]);
+const ignoredDirectories = new Set([".git", "node_modules", "dist", "build", ".dart_tool"]);
 const markdownFiles = [];
 
 async function walk(directory) {

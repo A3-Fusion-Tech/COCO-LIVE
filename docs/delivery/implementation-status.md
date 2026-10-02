@@ -14,7 +14,8 @@ This document states precisely what is implemented, how it is verified, and what
 | `packages/test-support` | Fake clock, world builder, sample terms |
 | `apps/api` | `Platform` (price/identity/marketplace/deal services), `Fulfilment` (Release D), and the NestJS `/v1` API (`src/http`) — see [endpoints](../api/endpoints.md) |
 | `apps/worker` | AGMARKNET adapter, ingest/maintenance jobs, outbox delivery with provider adapters |
-| `apps/web` | SSR public price page; installable PWA (`/app/`) for farmers, buyers, FPOs, partners and operators; same-origin gateway keeping the session in an HttpOnly cookie |
+| `apps/web` | Next.js (App Router, React): server-rendered public price page (`/`); installable PWA (`/app/`, React client components) for farmers, buyers, FPOs, partners and operators; route-handler gateway (`/session/*`, `/v1/*`) keeping the session in an HttpOnly cookie; nonce-based CSP; framework-free handlers in `src/gateway.ts` |
+| `apps/mobile` | Flutter Android app (Tamil-first, English): public price board with evidence and MSP, phone OTP sign-in with the bearer token in the platform keystore, price alerts with consent, market, sell lots, buy requirements, offer threads and deal cards — see [apps/mobile](../../apps/mobile/README.md) |
 
 ## Feature coverage
 
@@ -45,17 +46,22 @@ This document states precisely what is implemented, how it is verified, and what
 - Transport requests, competing partner quotes, single booking, ordered status updates, vehicle details visible only to parties and the booked partner, quote/delivery SLAs.
 - FPO member lots with review, aggregate lots preserving member contribution mapping, compatibility errors, settlement drafts apportioned exactly (largest remainder) with deductions, second-manager approval, immutable approved settlements and injection-safe CSV export.
 
+### Mobile app (Flutter)
+- `apps/mobile` uses only the existing `/v1` contracts ([ADR-009](../decisions/009-nextjs-nestjs-flutter.md)): price board (low/reference/high, freshness and confidence as text, not-an-offer disclaimer, evidence, MSP) without sign-in; OTP sign-in, sign-out and sign-out-everywhere; alerts with explicit consent; market browsing with offers; sell-lot creation, photo upload, publish and withdraw; one-off and recurring buy requirements with matches; negotiation threads (accept/counter/reject/withdraw); deal list and deal card with milestones, role-based actions and amendment responses.
+- Every mutation sends an `Idempotency-Key`, every request sends `Accept-Language` and `?lang=`, errors render the problem `message`; money is formatted from paise as INR.
+- Verified by `flutter analyze` and `flutter test` (API client against a mock HTTP client, formatting/catalog parity, widget tests for the price board, sign-in and alert consent) in the CI `mobile` job, plus an opt-in run of the whole flow against a live development API (`test/live_api_test.dart`). Not yet built into an APK in CI or tested on low-end devices; organisations, verification claims, inspection, transport, disputes, settlements and partner/operator work remain web-only.
+
 ### Operations and persistence
 - PostgreSQL schema with generated columns, constraints, append-only/immutability triggers, checksummed migrations, single-writer advisory lock, per-request transactions with in-memory rollback.
 - Transactional outbox with leases, exponential backoff, dead-lettering and an operator risk item; retention purge for OTPs, rate windows, old sessions, idempotency keys and sent notifications.
 - Docker Compose (PostGIS image), CI with a Postgres service, seed script for synthetic local actors.
 
 ## Verification
-`npm test` runs 65 tests (the 12 Postgres-backed tests need `DATABASE_URL`): domain invariants, the price pipeline, marketplace/deal/dispute/Release D flows, authorization and step-up, idempotency, rate limits, HTTP contracts, worker adapter and outbox, restart durability, rollback, concurrency (exactly one winner among simultaneous acceptances), and database-level constraint and trigger checks. `npm run test:e2e` drives the PWA in a real browser (seller → buyer → completed deal, Tamil switch, CSRF and cookie checks, operator step-up and queue decision, console-error check; needs Playwright/Chromium). `npm run typecheck` uses strict TypeScript (`erasableSyntaxOnly`, `noUncheckedIndexedAccess`).
+`npm test` runs 66 tests (the 12 Postgres-backed tests need `DATABASE_URL`): domain invariants, the price pipeline, marketplace/deal/dispute/Release D flows, authorization and step-up, idempotency, rate limits, HTTP contracts, worker adapter and outbox, restart durability, rollback, concurrency (exactly one winner among simultaneous acceptances), and database-level constraint and trigger checks. `npm run test:e2e` builds the Next.js app and drives it in a real browser (CSP and routing headers, seller → buyer → completed deal, Tamil switch, CSRF and cookie checks, operator step-up and queue decision, console-error check; needs Playwright/Chromium). `npm run typecheck` uses strict TypeScript (`erasableSyntaxOnly`, `noUncheckedIndexedAccess`).
 
 ## Known limits and what remains before launch
 - **Single writer.** Aggregates live in the API process and are persisted per request ([ADR-008](../decisions/008-document-store-unit-of-work.md)); horizontal write scaling needs query-level repositories. PostGIS is available in the compose image but geo queries still use in-process haversine.
 - **Providers.** SMS/WhatsApp/push are adapters with a console implementation; a real, DLT-registered SMS provider and WhatsApp template approval must be added. Object storage is local disk (S3-compatible adapter pending); image re-encoding/resizing and antivirus scanning are not implemented — the scan step is signature/content sniffing only.
-- **Web.** The PWA is a vanilla-JS reference UI covering every role. It has had a browser smoke/e2e pass but no accessibility audit, no on-device low-end testing, and the Tamil copy is a first draft requiring human review. Offline support caches the shell and public prices only; offline drafts are not implemented.
+- **Web.** The Next.js app is a reference UI covering every role (a direct port of the earlier vanilla-JS PWA). It has had a browser smoke/e2e pass but no accessibility audit, no on-device low-end testing, and the Tamil copy is a first draft requiring human review. Offline support caches the shell and public prices only; offline drafts are not implemented.
 - **Operations.** No deployment, monitoring dashboards, backups/restore drill, secret scanning or dependency review yet; the release gates in [release-gates.md](./release-gates.md) (e.g. four weeks of reliable operation, liquidity metrics, legal review of the operating model) cannot be satisfied by code alone.
 - **Payments** remain confirmations only; managed settlement (Phase 5) is intentionally out of scope.

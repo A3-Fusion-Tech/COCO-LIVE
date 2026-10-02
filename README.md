@@ -17,7 +17,7 @@ LiveCoco does not present one context-free “live price.” Every published pri
 
 ## Repository status
 
-The documented system is implemented in TypeScript on Node 22 with a NestJS API ([ADR-009](./docs/decisions/009-nextjs-nestjs-flutter.md)), backed by PostgreSQL, covering Release A (price board), Release B (assisted leads), Release C (structured deals) and Release D (inspection, logistics and FPO settlement) per [docs/delivery/roadmap.md](./docs/delivery/roadmap.md), with an installable Tamil/English PWA for every role. See [docs/delivery/implementation-status.md](./docs/delivery/implementation-status.md) for exactly what exists, what is simulated (console messaging providers, local-disk object storage) and what remains before production.
+The documented system is implemented in TypeScript on Node 22 with a NestJS API ([ADR-009](./docs/decisions/009-nextjs-nestjs-flutter.md)), backed by PostgreSQL, covering Release A (price board), Release B (assisted leads), Release C (structured deals) and Release D (inspection, logistics and FPO settlement) per [docs/delivery/roadmap.md](./docs/delivery/roadmap.md), with an installable Tamil/English Next.js web app (PWA) for every role. See [docs/delivery/implementation-status.md](./docs/delivery/implementation-status.md) for exactly what exists, what is simulated (console messaging providers, local-disk object storage) and what remains before production.
 
 ## Repository map
 
@@ -25,6 +25,7 @@ The documented system is implemented in TypeScript on Node 22 with a NestJS API 
 live-coco/
   apps/
     web/                 Public prices, marketplace and operations UI
+    mobile/              Flutter Android app (Tamil-first) on the same /v1 API
     api/                 Modular application API
     worker/              Ingestion and background processing
   packages/
@@ -72,9 +73,9 @@ live-coco/
 
 ## Local prerequisites
 
-- Node.js 22.18 or newer (runs TypeScript natively; no build step)
+- Node.js 22.18 or newer (runs TypeScript natively; only the Next.js web app has a production build, `npm run build:web`)
 - Docker (or any PostgreSQL 16 with a `livecoco` database) — the compose file uses the PostGIS image
-- `npm ci` installs `pg` plus `typescript`/`@types/*` for type checking
+- `npm ci` installs NestJS, Next.js/React, `pg` and `typescript`/`@types/*` for type checking
 
 ## Quick start
 
@@ -86,8 +87,10 @@ npm run db:migrate                            # applies migrations (also done au
 npm run seed                                  # optional: synthetic local users
 OPERATOR_PHONES=+919000000001 npm run dev     # API on :4000 (OTPs are printed to the console in development)
 INTERNAL_API_TOKEN=... npm run dev:worker     # ingestion, expiry, alerts, notification delivery
-API_BASE_URL=http://localhost:4000 npm run dev:web   # web + PWA on :3000  → open /app/
+API_BASE_URL=http://localhost:4000 npm run dev:web   # Next.js web on :3000 → open http://localhost:3000/app/
 ```
+
+Mobile (Flutter, Android first): with the API running, `cd apps/mobile && flutter pub get && flutter run` (the emulator reaches the API at `http://10.0.2.2:4000`; pass `--dart-define=API_BASE_URL=...` for a device or another server). See [apps/mobile/README.md](./apps/mobile/README.md).
 
 `docker compose up` runs the whole stack. Without `DATABASE_URL` the API runs with volatile in-memory state (development only; production refuses to start without a database).
 
@@ -99,13 +102,16 @@ Copy `.env.example` to an untracked local environment file. Production secrets m
 
 ```text
 npm test             # unit, integration, HTTP and (with DATABASE_URL) Postgres tests
-npm run test:e2e     # browser end-to-end of the PWA (needs Playwright + Chromium)
+npm run build:web    # production build of the Next.js web app (then: npm run start:web)
+npm run test:e2e     # builds the web app, then a browser end-to-end run (needs Playwright + Chromium)
 npm run lint
 npm run typecheck
 npm run docs:check   # local links + generated endpoint reference is current
 npm run docs:endpoints   # regenerate docs/api/endpoints.md
 npm run db:migrate | db:reset | seed
 ```
+
+Mobile app checks run from `apps/mobile`: `flutter analyze` and `flutter test`.
 
 Operator capabilities are granted by listing phone numbers in `OPERATOR_PHONES`; every operator endpoint still requires an OTP step-up and a reason.
 

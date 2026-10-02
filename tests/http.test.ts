@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { makeWorld } from "../packages/test-support/src/index.ts";
 import { createApp } from "../apps/api/src/server.ts";
-import { createWeb } from "../apps/web/src/server.ts";
+import { gatewayConfig, health, logout, manifest, pricePage, proxyApi, serviceWorker, verifySession, type GatewayConfig } from "../apps/web/src/gateway.ts";
 import { renderPricesPage } from "../apps/web/src/render.ts";
 
 async function boot(limit = 1000) {
@@ -151,30 +151,67 @@ test("full marketplace flow over HTTP", async () => {
 
 test("web renders Tamil/English price pages with freshness, disclaimers and MSP separation", async () => {
   const { w, base, close } = await boot();
-  const web = createWeb(base);
-  await new Promise<void>((r) => web.listen(0, r));
-  const wb = `http://127.0.0.1:${(web.address() as AddressInfo).port}`;
+  const cfg: GatewayConfig = { apiBaseUrl: base, secureCookies: false };
+  const page = async (path: string, headers: Record<string, string> = {}) => pricePage(new Request(`http://web${path}`, { headers }), cfg);
   try {
     w.p.ingestRaw("agmarknet", [{ state: "Tamil Nadu", market: "Pollachi", commodity: "Coconut", grade: "FAQ", arrival_date: "01/10/2026", min_price: "2900", max_price: "3200", modal_price: "3050", price_unit: "Rs./Quintal" }]);
-    const en = await (await fetch(`${wb}/?lang=en`)).text();
+    const enRes = await page("/?lang=en");
+    assert.equal(enRes.headers.get("cache-control"), "public, max-age=60");
+    const en = await enRes.text();
     assert.match(en, /lang="en"/);
     assert.match(en, /not guaranteed offers/);
     assert.match(en, /Reported at/);
     assert.match(en, /Minimum Support Price is a policy reference/);
-    const ta = await (await fetch(`${wb}/`, { headers: { "accept-language": "ta-IN" } })).text();
+    const ta = await (await page("/", { "accept-language": "ta-IN" })).text();
     assert.match(ta, /lang="ta"/);
     assert.match(ta, /பொள்ளாச்சி/);
     assert.match(ta, /உத்தரவாதமான/);
     w.clock.advanceHours(24 * 10);
-    const stale = await (await fetch(`${wb}/?lang=en`)).text();
+    const stale = await (await page("/?lang=en")).text();
     assert.match(stale, /Last reported for/);
     assert.match(stale, /Stale/);
-    assert.equal((await fetch(`${wb}/manifest.webmanifest`)).status, 200);
-    assert.equal((await fetch(`${wb}/sw.js`)).status, 200);
-    assert.equal((await fetch(`${wb}/missing`)).status, 404);
+    const mf = manifest(new Request("http://web/manifest.webmanifest?lang=ta"));
+    assert.equal(mf.headers.get("content-type"), "application/manifest+json");
+    assert.equal(((await mf.json()) as { lang: string }).lang, "ta");
+    assert.match(await serviceWorker().text(), /caches\.match/);
+    assert.equal(health().status, 200);
     assert.match(renderPricesPage([], [], "en"), /No current verified range/);
-  } finally { close(); web.close(); }
-  const down = createWeb("http://127.0.0.1:1");
-  await new Promise<void>((r) => down.listen(0, r));
-  try { assert.equal((await fetch(`http://127.0.0.1:${(down.address() as AddressInfo).port}/`)).status, 503); } finally { down.close(); }
+  } finally { close(); }
+  const down = await pricePage(new Request("http://web/"), { apiBaseUrl: "http://127.0.0.1:1", secureCookies: false });
+  assert.equal(down.status, 503);
+  assert.equal(await down.text(), "Prices temporarily unavailable");
+});
+
+test("web gateway keeps the session in an HttpOnly cookie, blocks cross-site mutations and hides internal routes", async () => {
+  const { w, base, close } = await boot();
+  const cfg: GatewayConfig = { apiBaseUrl: base, secureCookies: true };
+  const req = (method: string, path: string, init: { body?: string | Uint8Array; headers?: Record<string, string> } = {}) =>
+    new Request(`http://web${path}`, { method, headers: { "x-forwarded-for": "203.0.113.9", ...init.headers }, ...(init.body !== undefined ? { body: init.body } : {}) });
+  try {
+    assert.equal((await verifySession(req("POST", "/session/verify", { body: "{}" }), cfg)).status, 403, "verify needs x-requested-with");
+    await fetch(`${base}/v1/auth/otp/request`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: "9300000009" }) });
+    const ok = await verifySession(req("POST", "/session/verify", { body: JSON.stringify({ phone: "9300000009", code: w.otps.get("+919300000009") }), headers: { "x-requested-with": "t", "content-type": "application/json" } }), cfg);
+    assert.equal(ok.status, 200);
+    const setCookie = ok.headers.get("set-cookie") ?? "";
+    assert.match(setCookie, /^lc_session=[^;]+; HttpOnly; SameSite=Strict; Path=\/; Max-Age=2592000; Secure$/);
+    const body = (await ok.json()) as Record<string, unknown>;
+    assert.ok(body.user && !("token" in body), "the token is never returned to JavaScript");
+    const session = setCookie.split(";")[0] as string;
+    const me = await proxyApi(req("GET", "/v1/me?lang=en", { headers: { cookie: session } }), cfg);
+    assert.equal(me.status, 200);
+    assert.equal(me.headers.get("set-cookie"), null);
+    assert.equal((await proxyApi(req("POST", "/v1/alerts", { body: "{}", headers: { cookie: session, "content-type": "application/json" } }), cfg)).status, 403, "mutations need x-requested-with");
+    assert.equal((await proxyApi(req("POST", "/v1/internal/tick", { body: "{}", headers: { "x-requested-with": "t" } }), cfg)).status, 404);
+    assert.equal((await proxyApi(req("GET", "/v1/internal/tick"), cfg)).status, 404);
+    const unsigned = await proxyApi(req("PUT", "/v1/uploads/nope?sig=x", { body: new Uint8Array([1, 2, 3]), headers: { "content-type": "image/png" } }), cfg);
+    assert.notEqual(unsigned.status, 403, "signed upload PUTs pass the CSRF check and are judged by the API's signature");
+    const out = logout(req("POST", "/session/logout", { headers: { "x-requested-with": "t" } }));
+    assert.match(out.headers.get("set-cookie") ?? "", /^lc_session=; .*Max-Age=0/);
+    assert.equal(logout(req("POST", "/session/logout")).status, 403);
+    const down = await proxyApi(req("GET", "/v1/prices/latest"), { apiBaseUrl: "http://127.0.0.1:1", secureCookies: false });
+    assert.equal(down.status, 503);
+    assert.equal(gatewayConfig({ NODE_ENV: "production" }).secureCookies, true);
+    assert.equal(gatewayConfig({ NODE_ENV: "production", COOKIE_SECURE: "0" }).secureCookies, false);
+    assert.equal(gatewayConfig({ API_BASE_URL: "http://api:4000/" }).apiBaseUrl, "http://api:4000");
+  } finally { close(); }
 });

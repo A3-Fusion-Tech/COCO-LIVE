@@ -48,11 +48,14 @@ services:
   web:
     image: node:22
     working_dir: /app
-    command: node apps/web/src/server.ts
+    # Next.js dev server; its own node_modules volume so it does not race the api container's npm ci.
+    # For a production-like run: npm run build:web && npm run start:web
+    command: sh -c "npm ci && npm run dev:web"
     environment:
       PORT: "3000"
       API_BASE_URL: http://api:4000
-    volumes: [".:/app"]
+      NEXT_TELEMETRY_DISABLED: "1"
+    volumes: [".:/app", "/app/node_modules"]
     ports: ["3000:3000"]
     depends_on: [api]
 
