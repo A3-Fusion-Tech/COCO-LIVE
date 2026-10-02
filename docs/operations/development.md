@@ -2,7 +2,7 @@
 
 ## 1. Current state
 
-The monorepo layout, domain rules, PostgreSQL persistence, API, worker and web/PWA are implemented in TypeScript run directly by Node 22. Messaging uses a console adapter and object storage is local disk; see [implementation-status.md](../delivery/implementation-status.md).
+The monorepo layout, domain rules, PostgreSQL persistence, API, worker and web/PWA are implemented in TypeScript on Node 22; the API is NestJS run through `tsx` ([ADR-009](../decisions/009-nextjs-nestjs-flutter.md)). Messaging uses a console adapter and object storage is local disk; see [implementation-status.md](../delivery/implementation-status.md).
 
 ## 2. Bootstrap checklist (status)
 
@@ -15,7 +15,7 @@ The first implementation pull request should:
 5. ✅ Health (`/healthz` style) and readiness endpoints; ⏳ migrations (no database yet).
 6. ✅ Root scripts run real commands.
 7. ✅ CI (`.github/workflows/ci.yml`) for lint, typecheck, test and documentation links.
-8. ⏳ Secret scanning and dependency review (no dependencies to review yet).
+8. ⏳ Secret scanning and dependency review.
 
 ## 3. Local configuration
 

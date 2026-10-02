@@ -139,12 +139,13 @@ Modules may call another module through its application interface, never by writ
 
 ## 5. Recommended technical stack
 
-The architecture does not depend on a particular JavaScript framework. A pragmatic implementation is:
+The confirmed stack is Next.js (web), NestJS (API) and Flutter (mobile) on PostgreSQL ([ADR-009](./docs/decisions/009-nextjs-nestjs-flutter.md)):
 
 | Layer | Recommendation | Reason |
 |---|---|---|
-| Web/PWA | React-based server-rendered framework with TypeScript | Public price SEO plus app-like authenticated workflows |
-| API | TypeScript service with a structured modular framework | Shared language, validation, clear dependency injection and background-job support |
+| Web | Next.js with TypeScript | Public price SEO plus app-like authenticated workflows |
+| API | NestJS with TypeScript | Shared language, validation, clear dependency injection and background-job support |
+| Mobile | Flutter (Android first) | Play Store reach for farmers and traders, offline-tolerant field workflows |
 | Database | PostgreSQL with PostGIS | Transactions, flexible reporting and distance-based matching |
 | Cache/queue | Redis-compatible managed service | Short-lived cache, rate limiting and background jobs |
 | Search | PostgreSQL initially | Avoid separate search infrastructure until query volume proves the need |
@@ -154,7 +155,7 @@ The architecture does not depend on a particular JavaScript framework. A pragmat
 | Observability | Structured logs, traces, metrics and error reporting | Price provenance and transaction debugging are operationally critical |
 | Deployment | Managed container service + managed PostgreSQL/Redis/storage | Low operations burden and clean path to scale |
 
-Use a responsive PWA first. Add a thin Android wrapper only when Play Store distribution, deeper notifications or device features produce measurable adoption benefits.
+The web stays responsive for public price pages and desktop buyers; the Flutter app is the primary field client.
 
 ## 6. Identity and authorization
 

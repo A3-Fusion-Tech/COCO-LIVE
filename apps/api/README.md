@@ -11,7 +11,7 @@ The API must not perform slow source polling or notification fan-out inside HTTP
 npm run dev        # http://localhost:4000, see docs/api/endpoints.md
 ```
 
-State is in memory (see [implementation status](../../docs/delivery/implementation-status.md)). `Platform` in `src/platform.ts` holds the application services; `src/server.ts` maps them to `/v1` routes with validation, idempotency, problem responses and rate limiting.
+The API is a NestJS application ([ADR-009](../../docs/decisions/009-nextjs-nestjs-flutter.md)), run with `tsx`. `Platform` in `src/platform.ts` holds the application services. `src/server.ts` builds the Nest app; the controllers in `src/http/controllers` map the services to `/v1` routes, and `src/http/pipeline.ts` holds the shared request pipeline (validation, unit of work, service token, sessions, idempotency, problem responses and rate limiting). Route options are decorators from `src/http/route-kit.ts`: `@Public()`, `@Internal()`, `@Idempotent()`, `@Shape(...)`.
 
 ## Persistence
 

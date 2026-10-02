@@ -247,7 +247,7 @@ test("media: signed upload, content sniffing, no serving before approval, attach
 
 test("HTTP: direct upload with signed URL, authorised download and release D endpoints", async () => {
   const { w, seller, buyer, lot } = dealWorld();
-  const srv = createApp({ platform: w.p, internalToken: "tok" });
+  const srv = await createApp({ platform: w.p, internalToken: "tok" });
   await new Promise<void>((r) => srv.listen(0, r));
   const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
   const h = { authorization: `Bearer ${seller.token}`, "content-type": "application/json" };

@@ -11,7 +11,7 @@ const { createWeb } = await import("../../apps/web/src/server.ts");
 
 const otps = new Map();
 const p = new Platform({ deliverOtp: (ph, c) => otps.set(ph, c), operators: { "+919000000001": ["ops.price_review", "ops.source_health", "ops.verification", "ops.listings", "ops.disputes", "ops.audit"] } });
-const api = createApp({ platform: p, internalToken: "tok" });
+const api = await createApp({ platform: p, internalToken: "tok" });
 await new Promise((r) => api.listen(0, r));
 const web = createWeb({ apiBaseUrl: `http://127.0.0.1:${api.address().port}` });
 await new Promise((r) => web.listen(0, r));

@@ -17,7 +17,7 @@ LiveCoco does not present one context-free “live price.” Every published pri
 
 ## Repository status
 
-The documented system is implemented as TypeScript running directly on Node 22 (one runtime dependency, `pg`), backed by PostgreSQL, covering Release A (price board), Release B (assisted leads), Release C (structured deals) and Release D (inspection, logistics and FPO settlement) per [docs/delivery/roadmap.md](./docs/delivery/roadmap.md), with an installable Tamil/English PWA for every role. See [docs/delivery/implementation-status.md](./docs/delivery/implementation-status.md) for exactly what exists, what is simulated (console messaging providers, local-disk object storage) and what remains before production.
+The documented system is implemented in TypeScript on Node 22 with a NestJS API ([ADR-009](./docs/decisions/009-nextjs-nestjs-flutter.md)), backed by PostgreSQL, covering Release A (price board), Release B (assisted leads), Release C (structured deals) and Release D (inspection, logistics and FPO settlement) per [docs/delivery/roadmap.md](./docs/delivery/roadmap.md), with an installable Tamil/English PWA for every role. See [docs/delivery/implementation-status.md](./docs/delivery/implementation-status.md) for exactly what exists, what is simulated (console messaging providers, local-disk object storage) and what remains before production.
 
 ## Repository map
 

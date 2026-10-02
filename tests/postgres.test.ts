@@ -184,7 +184,7 @@ test("concurrent acceptances are serialised: exactly one wins, nothing is overso
 
 test("HTTP API on Postgres: durable, idempotent retries replay the original, reads skip entity diffing", { skip }, async () => {
   const w = await boot();
-  const srv = createApp({ platform: w.p, store: w.store });
+  const srv = await createApp({ platform: w.p, store: w.store });
   await new Promise<void>((r) => srv.listen(0, r));
   const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
   const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => { const r = await fetch(base + path, { method, headers: { "content-type": "application/json", ...headers }, ...(body ? { body: JSON.stringify(body) } : {}) }); return { status: r.status, json: (await r.json()) as any }; };
@@ -199,7 +199,7 @@ test("HTTP API on Postgres: durable, idempotent retries replay the original, rea
     // a "restart" replays the same idempotent request to the same answer
     srv.close();
     const { s2, p2 } = await w.restart();
-    const srv2 = createApp({ platform: p2, store: s2 });
+    const srv2 = await createApp({ platform: p2, store: s2 });
     await new Promise<void>((r) => srv2.listen(0, r));
     const base2 = `http://127.0.0.1:${(srv2.address() as AddressInfo).port}`;
     const r = await fetch(base2 + "/v1/organizations", { method: "POST", headers: { ...h, "content-type": "application/json", "idempotency-key": "k" }, body: JSON.stringify({ name: "Durable FPO", kind: "FPO" }) });
