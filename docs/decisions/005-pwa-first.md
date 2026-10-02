@@ -1,6 +1,6 @@
 # ADR-005: PWA before native mobile
 
-**Status:** Accepted  
+**Status:** Superseded by [ADR-009](./009-nextjs-nestjs-flutter.md)  
 **Date:** 2026-10-01
 
 ## Context

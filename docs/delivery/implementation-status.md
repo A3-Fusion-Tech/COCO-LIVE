@@ -12,7 +12,7 @@ This document states precisely what is implemented, how it is verified, and what
 | `packages/database` | PostgreSQL migrations, `PgStore` unit of work, writer lock, CLI ([ADR-008](../decisions/008-document-store-unit-of-work.md)) |
 | `packages/observability` | Redacting JSON logger, counters, correlation IDs |
 | `packages/test-support` | Fake clock, world builder, sample terms |
-| `apps/api` | `Platform` (price/identity/marketplace/deal services), `Fulfilment` (Release D), and the `/v1` HTTP server — see [endpoints](../api/endpoints.md) |
+| `apps/api` | `Platform` (price/identity/marketplace/deal services), `Fulfilment` (Release D), and the NestJS `/v1` API (`src/http`) — see [endpoints](../api/endpoints.md) |
 | `apps/worker` | AGMARKNET adapter, ingest/maintenance jobs, outbox delivery with provider adapters |
 | `apps/web` | SSR public price page; installable PWA (`/app/`) for farmers, buyers, FPOs, partners and operators; same-origin gateway keeping the session in an HttpOnly cookie |
 

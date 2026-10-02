@@ -336,6 +336,20 @@ export class Platform {
     this.idempotency.set(k, { hash, at: this.now().getTime(), result: JSON.parse(JSON.stringify(result ?? null)) });
     return result;
   }
+  /** As `idempotent`, for handlers that complete asynchronously; the settled result is what gets stored. */
+  async idempotentAsync<T>(actorId: string, endpoint: string, key: string | undefined, payload: unknown, fn: () => Promise<T>): Promise<T> {
+    if (!key) throw new DomainError("IDEMPOTENCY_KEY_REQUIRED", 400, "Idempotency-Key header required");
+    const k = `${actorId}|${endpoint}|${key}`;
+    const hash = sha(JSON.stringify(payload ?? null));
+    const prev = this.idempotency.get(k);
+    if (prev) {
+      if (prev.hash !== hash) throw conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused with a different payload");
+      return prev.result as T;
+    }
+    const result = await fn();
+    this.idempotency.set(k, { hash, at: this.now().getTime(), result: JSON.parse(JSON.stringify(result ?? null)) });
+    return result;
+  }
 
   // ---- price intelligence --------------------------------------------
   private health(source: string): SourceHealthRecord {

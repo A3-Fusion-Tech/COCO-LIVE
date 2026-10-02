@@ -41,6 +41,6 @@ if (process.env.DATABASE_URL) {
   logger.warn("DATABASE_URL not set: running with volatile in-memory state");
 }
 
-const server = createApp({ platform, logger, trustProxy: process.env.TRUST_PROXY === "1", ...(store ? { store } : {}), ...(process.env.INTERNAL_API_TOKEN ? { internalToken: process.env.INTERNAL_API_TOKEN } : {}) });
+const server = await createApp({ platform, logger, trustProxy: process.env.TRUST_PROXY === "1", ...(store ? { store } : {}), ...(process.env.INTERNAL_API_TOKEN ? { internalToken: process.env.INTERNAL_API_TOKEN } : {}) });
 server.listen(port, () => logger.info("api listening", { port }));
 for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => server.close(() => void (store?.close() ?? Promise.resolve()).then(() => process.exit(0))));

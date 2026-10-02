@@ -8,7 +8,7 @@ import { renderPricesPage } from "../apps/web/src/render.ts";
 
 async function boot(limit = 1000) {
   const w = makeWorld();
-  const srv = createApp({ platform: w.p, requestsPerMinute: limit });
+  const srv = await createApp({ platform: w.p, requestsPerMinute: limit });
   await new Promise<void>((r) => srv.listen(0, r));
   const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
   const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {

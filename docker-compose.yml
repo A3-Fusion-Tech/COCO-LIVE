@@ -19,7 +19,7 @@ services:
   api:
     image: node:22
     working_dir: /app
-    command: sh -c "npm ci && node apps/api/src/main.ts"
+    command: sh -c "npm ci && node --import tsx apps/api/src/main.ts"
     environment: &app-env
       NODE_ENV: development
       PORT: "4000"

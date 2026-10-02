@@ -51,7 +51,7 @@ test("ingest job is replay-safe, and outages degrade health without erasing data
 test("HTTP sink talks to the internal API with a service token; user sessions cannot", async () => {
   const { createApp } = await import("../apps/api/src/server.ts");
   const w = makeWorld();
-  const srv = createApp({ platform: w.p, internalToken: "s3cret-service-token" });
+  const srv = await createApp({ platform: w.p, internalToken: "s3cret-service-token" });
   await new Promise<void>((r) => srv.listen(0, r));
   const base = `http://127.0.0.1:${(srv.address() as import("node:net").AddressInfo).port}`;
   try {
@@ -68,7 +68,7 @@ test("HTTP sink talks to the internal API with a service token; user sessions ca
     const res = await fetch(`${base}/v1/internal/tick`, { method: "POST", headers: { authorization: `Bearer ${user.token}` }, body: "{}" });
     assert.equal(res.status, 404);
   } finally { srv.close(); }
-  const off = createApp({ platform: makeWorld().p });
+  const off = await createApp({ platform: makeWorld().p });
   await new Promise<void>((r) => off.listen(0, r));
   try { assert.equal((await fetch(`http://127.0.0.1:${(off.address() as import("node:net").AddressInfo).port}/v1/internal/tick`, { method: "POST", body: "{}", headers: { "x-internal-token": "" } })).status, 404, "disabled without a configured token"); } finally { off.close(); }
 });
