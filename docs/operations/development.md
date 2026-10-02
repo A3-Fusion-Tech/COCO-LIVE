@@ -11,7 +11,7 @@ The first implementation pull request should:
 1. ✅ Node ≥ 22 pinned in `package.json` engines and CI.
 2. ✅ `apps/web`, `apps/api` and `apps/worker` exist alongside their README context.
 3. ✅ Strict shared TypeScript configuration (`tsconfig.base.json`) and a dependency-free lint script.
-4. ⏳ Local PostgreSQL/PostGIS and Redis environment — not yet; persistence is in-memory.
+4. ✅ Local PostgreSQL/PostGIS via `docker compose up -d db` ([ADR-008](../decisions/008-document-store-unit-of-work.md)); ⏳ Redis not yet.
 5. ✅ Health (`/healthz` style) and readiness endpoints; ⏳ migrations (no database yet).
 6. ✅ Root scripts run real commands.
 7. ✅ CI (`.github/workflows/ci.yml`) for lint, typecheck, test and documentation links.

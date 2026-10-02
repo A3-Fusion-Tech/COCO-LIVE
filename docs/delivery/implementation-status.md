@@ -9,7 +9,7 @@ This document states precisely what is implemented, how it is verified, and what
 | `packages/domain` | Money/quantity, catalog, price validation, anomaly signals, weighted-median aggregation and confidence, listing/offer/deal/dispute rules, matching, reputation |
 | `packages/localization` | Tamil and English catalogs (parity-tested), INR/date formatting, notification templates |
 | `packages/contracts` | Problem responses, cursor pagination, request validation helpers |
-| `packages/database` | PostgreSQL migrations, `PgStore` unit of work, writer lock, CLI ([ADR-007](../decisions/007-document-store-unit-of-work.md)) |
+| `packages/database` | PostgreSQL migrations, `PgStore` unit of work, writer lock, CLI ([ADR-008](../decisions/008-document-store-unit-of-work.md)) |
 | `packages/observability` | Redacting JSON logger, counters, correlation IDs |
 | `packages/test-support` | Fake clock, world builder, sample terms |
 | `apps/api` | `Platform` (price/identity/marketplace/deal services), `Fulfilment` (Release D), and the `/v1` HTTP server — see [endpoints](../api/endpoints.md) |
@@ -54,7 +54,7 @@ This document states precisely what is implemented, how it is verified, and what
 `npm test` runs 65 tests (the 12 Postgres-backed tests need `DATABASE_URL`): domain invariants, the price pipeline, marketplace/deal/dispute/Release D flows, authorization and step-up, idempotency, rate limits, HTTP contracts, worker adapter and outbox, restart durability, rollback, concurrency (exactly one winner among simultaneous acceptances), and database-level constraint and trigger checks. `npm run test:e2e` drives the PWA in a real browser (seller → buyer → completed deal, Tamil switch, CSRF and cookie checks, operator step-up and queue decision, console-error check; needs Playwright/Chromium). `npm run typecheck` uses strict TypeScript (`erasableSyntaxOnly`, `noUncheckedIndexedAccess`).
 
 ## Known limits and what remains before launch
-- **Single writer.** Aggregates live in the API process and are persisted per request ([ADR-007](../decisions/007-document-store-unit-of-work.md)); horizontal write scaling needs query-level repositories. PostGIS is available in the compose image but geo queries still use in-process haversine.
+- **Single writer.** Aggregates live in the API process and are persisted per request ([ADR-008](../decisions/008-document-store-unit-of-work.md)); horizontal write scaling needs query-level repositories. PostGIS is available in the compose image but geo queries still use in-process haversine.
 - **Providers.** SMS/WhatsApp/push are adapters with a console implementation; a real, DLT-registered SMS provider and WhatsApp template approval must be added. Object storage is local disk (S3-compatible adapter pending); image re-encoding/resizing and antivirus scanning are not implemented — the scan step is signature/content sniffing only.
 - **Web.** The PWA is a vanilla-JS reference UI covering every role. It has had a browser smoke/e2e pass but no accessibility audit, no on-device low-end testing, and the Tamil copy is a first draft requiring human review. Offline support caches the shell and public prices only; offline drafts are not implemented.
 - **Operations.** No deployment, monitoring dashboards, backups/restore drill, secret scanning or dependency review yet; the release gates in [release-gates.md](./release-gates.md) (e.g. four weeks of reliable operation, liquidity metrics, legal review of the operating model) cannot be satisfied by code alone.

@@ -1,9 +1,12 @@
-# ADR-007: PostgreSQL document tables with a per-request unit of work
+# ADR-008: PostgreSQL document tables with a per-request unit of work
 
 **Status:** Accepted  
 **Date:** 2026-10-01
 
 ## Context
+
+This supersedes [ADR-007](./007-sqlite-pilot-persistence.md) (SQLite shared by API and worker): the worker now reaches state only through the API's internal endpoints, so a single PostgreSQL writer replaces the shared file.
+
 
 The application services (`apps/api/src/platform.ts`, `fulfilment.ts`) were written as framework-independent domain logic over aggregates (users, lots, offers, deals, settlements…). The business needs durable storage, real transactions, and database-enforced integrity (no oversold lots, append-only audit and Deal Card history, balanced settlements) without rewriting every rule as SQL.
 

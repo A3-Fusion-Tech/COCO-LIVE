@@ -15,4 +15,4 @@ State is in memory (see [implementation status](../../docs/delivery/implementati
 
 ## Persistence
 
-With `DATABASE_URL` set the API loads state from PostgreSQL, serves each request as one serialised unit of work and commits changed entities in a single transaction ([ADR-007](../../docs/decisions/007-document-store-unit-of-work.md)). Release D services live in `src/fulfilment.ts`; internal worker endpoints (`/v1/internal/*`) require `INTERNAL_API_TOKEN`.
+With `DATABASE_URL` set the API loads state from PostgreSQL, serves each request as one serialised unit of work and commits changed entities in a single transaction ([ADR-008](../../docs/decisions/008-document-store-unit-of-work.md)). Release D services live in `src/fulfilment.ts`; internal worker endpoints (`/v1/internal/*`) require `INTERNAL_API_TOKEN`.
