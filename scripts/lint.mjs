@@ -7,7 +7,7 @@ const entry = /(main|server|cli)\.ts$|scripts\/|e2e\//;
 const failures = [];
 async function walk(dir) {
   for (const e of await readdir(dir, { withFileTypes: true })) {
-    if (e.name === "node_modules") continue;
+    if (["node_modules", ".dart_tool", "build"].includes(e.name)) continue;
     const p = join(dir, e.name);
     if (e.isDirectory()) await walk(p);
     else if ([".ts", ".mjs"].includes(extname(e.name))) {

@@ -1,0 +1,25 @@
+name: live_coco
+description: "Coco Live: Tamil-first coconut price board and verified B2B marketplace (Android first)."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  flutter_secure_storage: ^9.2.4
+  http: ^1.5.0
+  image_picker: ^1.1.2
+  intl: any
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

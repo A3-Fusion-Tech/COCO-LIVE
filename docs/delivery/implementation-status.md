@@ -15,6 +15,7 @@ This document states precisely what is implemented, how it is verified, and what
 | `apps/api` | `Platform` (price/identity/marketplace/deal services), `Fulfilment` (Release D), and the NestJS `/v1` API (`src/http`) — see [endpoints](../api/endpoints.md) |
 | `apps/worker` | AGMARKNET adapter, ingest/maintenance jobs, outbox delivery with provider adapters |
 | `apps/web` | SSR public price page; installable PWA (`/app/`) for farmers, buyers, FPOs, partners and operators; same-origin gateway keeping the session in an HttpOnly cookie |
+| `apps/mobile` | Flutter Android app (Tamil-first, English): public price board with evidence and MSP, phone OTP sign-in with the bearer token in the platform keystore, price alerts with consent, market, sell lots, buy requirements, offer threads and deal cards — see [apps/mobile](../../apps/mobile/README.md) |
 
 ## Feature coverage
 
@@ -44,6 +45,11 @@ This document states precisely what is implemented, how it is verified, and what
 - Inspection and logistics partner onboarding (operator-approved); inspection workflow that gates the deal (`INSPECTION_PENDING`), buyer decision on FAIL/CONDITIONAL, immutable results, measurable SLAs.
 - Transport requests, competing partner quotes, single booking, ordered status updates, vehicle details visible only to parties and the booked partner, quote/delivery SLAs.
 - FPO member lots with review, aggregate lots preserving member contribution mapping, compatibility errors, settlement drafts apportioned exactly (largest remainder) with deductions, second-manager approval, immutable approved settlements and injection-safe CSV export.
+
+### Mobile app (Flutter)
+- `apps/mobile` uses only the existing `/v1` contracts ([ADR-009](../decisions/009-nextjs-nestjs-flutter.md)): price board (low/reference/high, freshness and confidence as text, not-an-offer disclaimer, evidence, MSP) without sign-in; OTP sign-in, sign-out and sign-out-everywhere; alerts with explicit consent; market browsing with offers; sell-lot creation, photo upload, publish and withdraw; one-off and recurring buy requirements with matches; negotiation threads (accept/counter/reject/withdraw); deal list and deal card with milestones, role-based actions and amendment responses.
+- Every mutation sends an `Idempotency-Key`, every request sends `Accept-Language` and `?lang=`, errors render the problem `message`; money is formatted from paise as INR.
+- Verified by `flutter analyze` and `flutter test` (API client against a mock HTTP client, formatting/catalog parity, widget tests for the price board, sign-in and alert consent) in the CI `mobile` job, plus an opt-in run of the whole flow against a live development API (`test/live_api_test.dart`). Not yet built into an APK in CI or tested on low-end devices; organisations, verification claims, inspection, transport, disputes, settlements and partner/operator work remain web-only.
 
 ### Operations and persistence
 - PostgreSQL schema with generated columns, constraints, append-only/immutability triggers, checksummed migrations, single-writer advisory lock, per-request transactions with in-memory rollback.

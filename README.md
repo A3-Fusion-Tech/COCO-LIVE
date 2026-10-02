@@ -25,6 +25,7 @@ The documented system is implemented in TypeScript on Node 22 with a NestJS API 
 live-coco/
   apps/
     web/                 Public prices, marketplace and operations UI
+    mobile/              Flutter Android app (Tamil-first) on the same /v1 API
     api/                 Modular application API
     worker/              Ingestion and background processing
   packages/
@@ -89,6 +90,8 @@ INTERNAL_API_TOKEN=... npm run dev:worker     # ingestion, expiry, alerts, notif
 API_BASE_URL=http://localhost:4000 npm run dev:web   # web + PWA on :3000  → open /app/
 ```
 
+Mobile (Flutter, Android first): with the API running, `cd apps/mobile && flutter pub get && flutter run` (the emulator reaches the API at `http://10.0.2.2:4000`; pass `--dart-define=API_BASE_URL=...` for a device or another server). See [apps/mobile/README.md](./apps/mobile/README.md).
+
 `docker compose up` runs the whole stack. Without `DATABASE_URL` the API runs with volatile in-memory state (development only; production refuses to start without a database).
 
 ## Configuration
@@ -106,6 +109,8 @@ npm run docs:check   # local links + generated endpoint reference is current
 npm run docs:endpoints   # regenerate docs/api/endpoints.md
 npm run db:migrate | db:reset | seed
 ```
+
+Mobile app checks run from `apps/mobile`: `flutter analyze` and `flutter test`.
 
 Operator capabilities are granted by listing phone numbers in `OPERATOR_PHONES`; every operator endpoint still requires an OTP step-up and a reason.
 
