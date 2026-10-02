@@ -6,5 +6,6 @@
     "moduleResolution": "nodenext",
     "types": ["node"]
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"]
+  "include": ["apps/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["node_modules", "apps/web/app", "apps/web/proxy.ts", "apps/web/next-env.d.ts", "apps/web/.next"]
 }
