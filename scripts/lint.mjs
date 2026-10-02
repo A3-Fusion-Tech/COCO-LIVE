@@ -7,10 +7,10 @@ const entry = /(main|server|cli)\.ts$|scripts\/|e2e\//;
 const failures = [];
 async function walk(dir) {
   for (const e of await readdir(dir, { withFileTypes: true })) {
-    if (["node_modules", ".dart_tool", "build"].includes(e.name)) continue;
+    if (["node_modules", ".next", ".dart_tool", "build"].includes(e.name)) continue;
     const p = join(dir, e.name);
     if (e.isDirectory()) await walk(p);
-    else if ([".ts", ".mjs"].includes(extname(e.name))) {
+    else if ([".ts", ".tsx", ".mjs"].includes(extname(e.name))) {
       (await readFile(p, "utf8")).split("\n").forEach((line, i) => {
         if (/\s+$/.test(line)) failures.push(`${p}:${i + 1} trailing whitespace`);
         if (/\bdebug" + "ger\b/.test(line)) failures.push(`${p}:${i + 1} debug statement`);

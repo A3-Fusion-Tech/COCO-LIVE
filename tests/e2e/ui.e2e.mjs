@@ -1,5 +1,5 @@
 // Browser end-to-end check of the PWA against a real API + Postgres-less platform.
-// Run: NODE_PATH=<dir containing playwright> node tests/e2e/ui.e2e.mjs   (skips if playwright is unavailable)
+// Run: npm run build:web && NODE_PATH=<dir containing playwright> node --import tsx tests/e2e/ui.e2e.mjs   (skips if playwright is unavailable)
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 let chromium;
@@ -13,7 +13,7 @@ const otps = new Map();
 const p = new Platform({ deliverOtp: (ph, c) => otps.set(ph, c), operators: { "+919000000001": ["ops.price_review", "ops.source_health", "ops.verification", "ops.listings", "ops.disputes", "ops.audit"] } });
 const api = await createApp({ platform: p, internalToken: "tok" });
 await new Promise((r) => api.listen(0, r));
-const web = createWeb({ apiBaseUrl: `http://127.0.0.1:${api.address().port}` });
+const web = await createWeb({ apiBaseUrl: `http://127.0.0.1:${api.address().port}`, secureCookies: false });
 await new Promise((r) => web.listen(0, r));
 const base = `http://127.0.0.1:${web.address().port}`;
 p.fx.baseUrl = base;
@@ -47,6 +47,11 @@ try {
   await pub.goto(`${base}/?lang=ta`);
   check((await pub.textContent("h1")).includes("தேங்காய்"), "public price page renders Tamil");
   check(await pub.locator('a[href="/app/"]').count() === 1, "public page links to the app");
+  const shell = await fetch(`${base}/app/`);
+  const csp = shell.headers.get("content-security-policy") ?? "";
+  check(shell.status === 200 && /script-src 'self' 'nonce-[^']+'(;|$)/.test(csp) && !/unsafe-inline|unsafe-eval/.test(csp) && shell.headers.get("x-content-type-options") === "nosniff", "app shell has a nonce-based CSP without inline relaxations, and nosniff");
+  check((await fetch(`${base}/app`, { redirect: "manual" })).headers.get("location")?.endsWith("/app/"), "/app redirects to /app/");
+  check((await fetch(`${base}/v1/internal/tick`)).status === 404 && (await fetch(`${base}/missing`)).status === 404, "internal API routes and unknown paths are 404 at the web tier");
 
   // seller signs in, creates + uploads + publishes a lot
   const s = await newUser("9800000001");

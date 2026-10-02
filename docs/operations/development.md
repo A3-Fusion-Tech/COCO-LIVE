@@ -2,7 +2,7 @@
 
 ## 1. Current state
 
-The monorepo layout, domain rules, PostgreSQL persistence, API, worker and web/PWA are implemented in TypeScript on Node 22; the API is NestJS run through `tsx` ([ADR-009](../decisions/009-nextjs-nestjs-flutter.md)). Messaging uses a console adapter and object storage is local disk; see [implementation-status.md](../delivery/implementation-status.md).
+The monorepo layout, domain rules, PostgreSQL persistence, API, worker and web/PWA are implemented in TypeScript on Node 22; the API is NestJS run through `tsx` and the web tier is a Next.js app built with `npm run build:web` ([ADR-009](../decisions/009-nextjs-nestjs-flutter.md)). Messaging uses a console adapter and object storage is local disk; see [implementation-status.md](../delivery/implementation-status.md).
 
 ## 2. Bootstrap checklist (status)
 

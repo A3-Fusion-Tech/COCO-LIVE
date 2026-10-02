@@ -29,7 +29,11 @@ jobs:
       - run: npm run db:migrate
       - run: npm test
       - run: npm run docs:check
-      - name: Browser end-to-end (PWA)
+      - name: Build the web app (Next.js)
+        run: npm run build:web
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+      - name: Browser end-to-end (web app against the production build)
         run: |
           npm install --no-save playwright@1.56
           npx playwright install --with-deps chromium

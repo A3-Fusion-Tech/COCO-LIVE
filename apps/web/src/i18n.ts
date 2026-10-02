@@ -1,5 +1,5 @@
 // UI message catalog (stable keys). Tamil copy is a first draft and needs human review before launch.
-export const UI = {
+export const UI: Record<"en" | "ta", Record<string, string>> = {
   en: {
     "nav.prices": "Prices", "nav.market": "Market", "nav.sell": "Sell", "nav.buy": "Buy", "nav.deals": "Deals", "nav.org": "Organization", "nav.partner": "Partner", "nav.ops": "Operations", "nav.me": "Account", "nav.login": "Sign in",
     "common.save": "Save", "common.cancel": "Cancel", "common.create": "Create", "common.submit": "Submit", "common.back": "Back", "common.none": "Nothing here yet.", "common.loading": "Loading…", "common.refresh": "Refresh",
