@@ -5,13 +5,32 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: livecoco
+          POSTGRES_PASSWORD: livecoco
+          POSTGRES_DB: livecoco
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U livecoco" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://livecoco:livecoco@localhost:5432/livecoco
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --no-save typescript@5 @types/node@22
+          cache: npm
+      - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm run db:migrate
       - run: npm test
       - run: npm run docs:check
+      - name: Browser end-to-end (PWA)
+        run: |
+          npm install --no-save playwright@1.56
+          npx playwright install --with-deps chromium
+          CHROMIUM_PATH="$(node -e 'console.log(require("playwright").chromium.executablePath())')" node tests/e2e/ui.e2e.mjs

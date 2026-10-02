@@ -1,15 +1,15 @@
 # Database package
 
-Owns persistence. Business decisions remain in the domain/application modules rather than database triggers, except for integrity constraints and append-only protections.
+PostgreSQL persistence for LiveCoco. Business decisions stay in the domain/application modules; the database enforces integrity and append-only history. See [ADR-008](../../docs/decisions/008-document-store-unit-of-work.md).
 
-## Current: SQLite pilot store
+- `migrations/*.sql` — ordered, checksummed migrations (`001_init`, `002_release_d`, `003_outbox`). Applying a changed migration is refused.
+- `src/pg.ts` — `PgStore`: migrations, writer lock, load, and `withTransaction` (the per-request unit of work with rollback of in-memory state).
+- `src/tracked.ts` — `TrackedMap`, which records which entities a request touched.
+- `src/cli.ts` — `npm run db:migrate` and `npm run db:reset` (refuses non-local hosts).
 
-`src/index.ts` exports `SqliteStore`, which keeps every `Platform` collection listed in `PERSISTED_COLLECTIONS` as JSON rows in one SQLite file ([ADR-007](../../docs/decisions/007-sqlite-pilot-persistence.md)).
+```text
+docker compose up -d db
+DATABASE_URL=postgresql://livecoco:livecoco@localhost:5432/livecoco npm run db:migrate
+```
 
-- `attach(platform)` writes defaults on first run, otherwise loads saved state.
-- `unitOfWork(platform, fn)` runs `fn` under an exclusive write lock, reloads state committed by another process first, then writes only changed rows.
-- A test fails if `Platform` gains a `Map` or array that is not listed in `PERSISTED_COLLECTIONS`.
-
-## Next: PostgreSQL
-
-Schema, forward-only migrations, repositories and transaction helpers for PostgreSQL/PostGIS replace this store before running more than one API instance.
+Tests (`tests/postgres.test.ts`) create an isolated schema per test and drop it afterwards; they are skipped when `DATABASE_URL` is not set.

@@ -45,3 +45,10 @@ export const sampleTerms = (over: Partial<OfferTerms> = {}): OfferTerms => ({
   weighmentMethod: "COUNT", weighmentLocation: "Farm", paymentMethod: "UPI", paymentDue: "ON_LOADING",
   fulfilmentFrom: "2026-10-02T04:00:00Z", fulfilmentBy: "2026-10-05T12:00:00Z", acceptanceWindowHours: 24, inspectionTerms: "Buyer may inspect at loading", ...over,
 });
+
+/** In-process sink: same behaviour as the API's /internal endpoints, without HTTP. */
+export const localSink = (p: Platform) => ({
+  async ingest(source: string, records: Record<string, unknown>[]) { const r = p.ingestRaw(source, records); p.refreshAggregates(); return r; },
+  async failure(source: string, error: string) { p.recordSourceFailure(source, error); },
+  async tick() { return p.maintenanceTick(); },
+});

@@ -41,9 +41,11 @@ test("unmapped source values go to a review queue and are never guessed", () => 
   const q = w.p.listQueue(ops.user, ops.session, "MAPPING");
   assert.equal(q.length, 4);
   // operator resolves one explicitly
-  const done = w.p.resolveMapping(ops.user, ops.session, q[0]!.queueItemId, { productId: "prod_mature_coconut", marketId: "market_pollachi", unit: "QUINTAL" }, "Confirmed with source");
+  const mystery = q.find((i) => w.p.raw.get(i.subject)!.payload.commodity === "Mystery Fruit")!;
+  const other = q.find((i) => i !== mystery)!;
+  const done = w.p.resolveMapping(ops.user, ops.session, mystery.queueItemId, { productId: "prod_mature_coconut", marketId: "market_pollachi", unit: "QUINTAL" }, "Confirmed with source");
   assert.equal(done.state, "ELIGIBLE");
-  assert.throws(() => w.p.resolveMapping(ops.user, ops.session, q[1]!.queueItemId, { productId: "prod_mature_coconut", marketId: "market_pollachi", unit: "QUINTAL" }, ""), /reason/i);
+  assert.throws(() => w.p.resolveMapping(ops.user, ops.session, other.queueItemId, { productId: "prod_mature_coconut", marketId: "market_pollachi", unit: "QUINTAL" }, ""), /reason/i);
 });
 
 test("end-to-end: contributors + official data aggregate, evidence is anonymous, thin evidence falls back", () => {

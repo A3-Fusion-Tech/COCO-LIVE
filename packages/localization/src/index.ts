@@ -32,6 +32,17 @@ export const CATALOG = {
     "error.otp_invalid": "The code is invalid or expired.",
     "error.validation_failed": "Some fields are invalid.",
     "error.conflict": "The request conflicts with the current state.",
+    "notify.price.alert": "LiveCoco: price alert. Reference {referencePaise} (reported {observedAt}). Open: {link}",
+    "notify.offer.received": "LiveCoco: you received a new offer. Open the app to respond.",
+    "notify.offer.countered": "LiveCoco: your offer was countered. Open the app to respond.",
+    "notify.offer.invalidated": "LiveCoco: an offer was withdrawn because the lot changed.",
+    "notify.dispute.opened": "LiveCoco: a dispute was opened on your deal. Please respond before {dueAt}.",
+    "notify.claim.approved": "LiveCoco: your verification was approved.",
+    "notify.claim.rejected": "LiveCoco: your verification was not approved. Open the app for details.",
+    "notify.claim.needs_more_information": "LiveCoco: we need more information to verify you.",
+    "notify.claim.revoked": "LiveCoco: a verification on your account was revoked.",
+    "notify.org.member_changed": "LiveCoco: a high-risk membership change was made in your organization.",
+    "notify.transport.quote": "LiveCoco: you received a transport quote for your deal.",
     "claim.MOBILE_CONTROL": "Mobile number verified",
     "claim.PERSON_IDENTITY": "Identity documents checked",
     "claim.ORGANIZATION_EXISTENCE": "Organization documents checked",
@@ -68,6 +79,17 @@ export const CATALOG = {
     "error.otp_invalid": "குறியீடு தவறானது அல்லது காலாவதியானது.",
     "error.validation_failed": "சில புலங்கள் தவறானவை.",
     "error.conflict": "கோரிக்கை தற்போதைய நிலையுடன் முரண்படுகிறது.",
+    "notify.price.alert": "LiveCoco: விலை எச்சரிக்கை. குறிப்பு {referencePaise} (பதிவு: {observedAt}). திற: {link}",
+    "notify.offer.received": "LiveCoco: புதிய சலுகை வந்துள்ளது. பதிலளிக்க செயலியைத் திறக்கவும்.",
+    "notify.offer.countered": "LiveCoco: உங்கள் சலுகைக்கு எதிர் சலுகை வந்துள்ளது. பதிலளிக்க செயலியைத் திறக்கவும்.",
+    "notify.offer.invalidated": "LiveCoco: இருப்பு மாறியதால் ஒரு சலுகை திரும்பப்பெறப்பட்டது.",
+    "notify.dispute.opened": "LiveCoco: உங்கள் ஒப்பந்தத்தில் தகராறு தொடங்கப்பட்டது. {dueAt}க்கு முன் பதிலளிக்கவும்.",
+    "notify.claim.approved": "LiveCoco: உங்கள் சரிபார்ப்பு அங்கீகரிக்கப்பட்டது.",
+    "notify.claim.rejected": "LiveCoco: உங்கள் சரிபார்ப்பு அங்கீகரிக்கப்படவில்லை. விவரங்களுக்கு செயலியைத் திறக்கவும்.",
+    "notify.claim.needs_more_information": "LiveCoco: சரிபார்க்க கூடுதல் தகவல் தேவை.",
+    "notify.claim.revoked": "LiveCoco: உங்கள் கணக்கில் ஒரு சரிபார்ப்பு ரத்துசெய்யப்பட்டது.",
+    "notify.org.member_changed": "LiveCoco: உங்கள் அமைப்பில் அதிக ஆபத்துள்ள உறுப்பினர் மாற்றம் செய்யப்பட்டது.",
+    "notify.transport.quote": "LiveCoco: உங்கள் ஒப்பந்தத்துக்கு போக்குவரத்து விலைப்புள்ளி வந்துள்ளது.",
     "claim.MOBILE_CONTROL": "கைபேசி எண் சரிபார்க்கப்பட்டது",
     "claim.PERSON_IDENTITY": "அடையாள ஆவணங்கள் சரிபார்க்கப்பட்டன",
     "claim.ORGANIZATION_EXISTENCE": "நிறுவன ஆவணங்கள் சரிபார்க்கப்பட்டன",
@@ -104,4 +126,16 @@ export function missingKeys(): { locale: Locale; keys: string[] }[] {
     { locale: "ta", keys: en.filter((k) => !ta.includes(k)) },
     { locale: "en", keys: ta.filter((k) => !en.includes(k)) },
   ];
+}
+
+/** Render a notification body for SMS/WhatsApp from its template and data; unknown values stay as placeholders. */
+export function renderNotification(locale: Locale, template: string, data: Record<string, unknown>): string {
+  const text = t(locale, `notify.${template}`);
+  return text.replace(/\{(\w+)\}/g, (m, k: string) => {
+    const v = data[k];
+    if (v === undefined || v === null) return m;
+    if (k === "referencePaise" && typeof v === "number") return formatMoney(v, locale);
+    if ((k === "observedAt" || k === "dueAt") && typeof v === "string") return formatDateTime(v, locale);
+    return String(v);
+  });
 }

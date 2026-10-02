@@ -16,4 +16,6 @@ Implementation must follow [the product requirements](../../docs/product/require
 API_BASE_URL=http://localhost:4000 npm run dev:web
 ```
 
-Implemented: the public Tamil/English price page (`/?lang=ta|en`), web manifest and offline-cache service worker. Authenticated flows and the operations console are not yet built.
+Public Tamil/English price page (`/?lang=ta|en`), web manifest and offline-cache service worker.
+
+Also implemented: the installable PWA at `/app/` (prices, market, sell, buy, offers and deals, FPO aggregation and settlement, partner workspace, operations console) in Tamil and English. The web server is a same-origin gateway: the API session token lives in an HttpOnly, SameSite=Strict cookie, mutations require `x-requested-with`, and a strict CSP (no inline script/style) applies to the app. Browser test: `npm run test:e2e`.

@@ -3,7 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 
 const roots = ["apps", "packages", "tests", "scripts"];
-const entry = /(main|server)\.ts$|scripts\//;
+const entry = /(main|server|cli)\.ts$|scripts\/|e2e\//;
 const failures = [];
 async function walk(dir) {
   for (const e of await readdir(dir, { withFileTypes: true })) {

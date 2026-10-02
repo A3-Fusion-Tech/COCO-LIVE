@@ -1,0 +1,61 @@
+# Local development stack: PostgreSQL (PostGIS image, ready for geo queries) and the three apps.
+# Usage:  docker compose up -d db        # database only (run apps with npm run dev ...)
+#         docker compose up              # database + api + worker + web
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: livecoco
+      POSTGRES_PASSWORD: livecoco
+      POSTGRES_DB: livecoco
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U livecoco -d livecoco"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    image: node:22
+    working_dir: /app
+    command: sh -c "npm ci && node apps/api/src/main.ts"
+    environment: &app-env
+      NODE_ENV: development
+      PORT: "4000"
+      TRUST_PROXY: "1"
+      DATABASE_URL: postgresql://livecoco:livecoco@db:5432/livecoco
+      INTERNAL_API_TOKEN: local-dev-internal-token
+      UPLOAD_SIGNING_SECRET: local-dev-upload-secret
+      OBJECT_STORAGE_DIR: /data/objects
+      API_BASE_URL: http://localhost:3000   # uploads are sent through the web gateway
+      OPERATOR_PHONES: ${OPERATOR_PHONES:-}
+    volumes: [".:/app", "objects:/data/objects"]
+    ports: ["4000:4000"]
+    depends_on: { db: { condition: service_healthy } }
+
+  worker:
+    image: node:22
+    working_dir: /app
+    command: sh -c "npm ci && node apps/worker/src/main.ts"
+    environment:
+      API_BASE_URL: http://api:4000
+      INTERNAL_API_TOKEN: local-dev-internal-token
+      DATA_GOV_IN_API_KEY: ${DATA_GOV_IN_API_KEY:-}
+    volumes: [".:/app"]
+    depends_on: [api]
+
+  web:
+    image: node:22
+    working_dir: /app
+    command: node apps/web/src/server.ts
+    environment:
+      PORT: "3000"
+      API_BASE_URL: http://api:4000
+    volumes: [".:/app"]
+    ports: ["3000:3000"]
+    depends_on: [api]
+
+volumes:
+  pgdata:
+  objects:

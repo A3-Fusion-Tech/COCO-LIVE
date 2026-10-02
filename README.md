@@ -17,7 +17,7 @@ LiveCoco does not present one context-free “live price.” Every published pri
 
 ## Repository status
 
-The documented system is implemented as a dependency-free TypeScript reference implementation covering Release A (price board), Release B (assisted leads) and Release C (structured deals) per [docs/delivery/roadmap.md](./docs/delivery/roadmap.md). See [docs/delivery/implementation-status.md](./docs/delivery/implementation-status.md) for exactly what exists, what is simulated (in-memory storage, console messaging) and what remains before production.
+The documented system is implemented as TypeScript running directly on Node 22 (one runtime dependency, `pg`), backed by PostgreSQL, covering Release A (price board), Release B (assisted leads), Release C (structured deals) and Release D (inspection, logistics and FPO settlement) per [docs/delivery/roadmap.md](./docs/delivery/roadmap.md), with an installable Tamil/English PWA for every role. See [docs/delivery/implementation-status.md](./docs/delivery/implementation-status.md) for exactly what exists, what is simulated (console messaging providers, local-disk object storage) and what remains before production.
 
 ## Repository map
 
@@ -72,28 +72,42 @@ live-coco/
 
 ## Local prerequisites
 
-- Node.js 22.18 or newer (runs TypeScript natively; no build step, no runtime dependencies)
-- `typescript` and `@types/node` only for `npm run typecheck` (`npm install --no-save typescript @types/node`)
+- Node.js 22.18 or newer (runs TypeScript natively; no build step)
+- Docker (or any PostgreSQL 16 with a `livecoco` database) — the compose file uses the PostGIS image
+- `npm ci` installs `pg` plus `typescript`/`@types/*` for type checking
 
-The API and worker share state through a SQLite file at `LIVECOCO_DB_PATH` (default `.data/livecoco.sqlite`; delete it to reset). Production hardening (PostgreSQL/PostGIS, Redis queue, object storage, SMS provider) is described in [implementation-status.md](./docs/delivery/implementation-status.md).
+## Quick start
+
+```text
+npm ci
+docker compose up -d db                       # PostgreSQL on :5432
+export DATABASE_URL=postgresql://livecoco:livecoco@localhost:5432/livecoco
+npm run db:migrate                            # applies migrations (also done automatically at API start)
+npm run seed                                  # optional: synthetic local users
+OPERATOR_PHONES=+919000000001 npm run dev     # API on :4000 (OTPs are printed to the console in development)
+INTERNAL_API_TOKEN=... npm run dev:worker     # ingestion, expiry, alerts, notification delivery
+API_BASE_URL=http://localhost:4000 npm run dev:web   # web + PWA on :3000  → open /app/
+```
+
+`docker compose up` runs the whole stack. Without `DATABASE_URL` the API runs with volatile in-memory state (development only; production refuses to start without a database).
 
 ## Configuration
 
-Copy `.env.example` to an untracked local environment file once services exist. Production secrets must be stored in the deployment platform’s secret manager, never committed.
+Copy `.env.example` to an untracked local environment file. Production secrets must be stored in the deployment platform’s secret manager, never committed. `INTERNAL_API_TOKEN` (worker ↔ API) and `UPLOAD_SIGNING_SECRET` are mandatory in production.
 
 ## Development workflow
 
 ```text
-npm run dev          # API on :4000 (OTPs are printed to the console in development)
-npm run dev:worker   # ingestion, expiry, alerts (needs DATA_GOV_IN_API_KEY for AGMARKNET)
-npm run dev:web      # Tamil/English price pages on :3000 (API_BASE_URL -> API)
-npm test             # 45 unit, integration, HTTP and persistence tests
+npm test             # unit, integration, HTTP and (with DATABASE_URL) Postgres tests
+npm run test:e2e     # browser end-to-end of the PWA (needs Playwright + Chromium)
 npm run lint
 npm run typecheck
-npm run docs:check
+npm run docs:check   # local links + generated endpoint reference is current
+npm run docs:endpoints   # regenerate docs/api/endpoints.md
+npm run db:migrate | db:reset | seed
 ```
 
-Set `OPERATOR_PHONES=+91XXXXXXXXXX` to grant operator capabilities to a development account (operator endpoints still require OTP step-up).
+Operator capabilities are granted by listing phone numbers in `OPERATOR_PHONES`; every operator endpoint still requires an OTP step-up and a reason.
 
 ## Documentation ownership
 

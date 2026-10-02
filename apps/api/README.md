@@ -12,3 +12,7 @@ npm run dev        # http://localhost:4000, see docs/api/endpoints.md
 ```
 
 State is in memory (see [implementation status](../../docs/delivery/implementation-status.md)). `Platform` in `src/platform.ts` holds the application services; `src/server.ts` maps them to `/v1` routes with validation, idempotency, problem responses and rate limiting.
+
+## Persistence
+
+With `DATABASE_URL` set the API loads state from PostgreSQL, serves each request as one serialised unit of work and commits changed entities in a single transaction ([ADR-008](../../docs/decisions/008-document-store-unit-of-work.md)). Release D services live in `src/fulfilment.ts`; internal worker endpoints (`/v1/internal/*`) require `INTERNAL_API_TOKEN`.

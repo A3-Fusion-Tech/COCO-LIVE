@@ -1,6 +1,6 @@
 # ADR-007: SQLite persistence for the single-node pilot
 
-**Status:** Accepted  
+**Status:** Superseded by [ADR-008](./008-document-store-unit-of-work.md)  
 **Date:** 2026-10-01
 
 ## Context

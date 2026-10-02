@@ -10,7 +10,8 @@ Architecture Decision Records (ADRs) preserve why important choices were made.
 - [ADR-004: Transactional outbox](./004-transactional-outbox.md)
 - [ADR-005: PWA before native mobile](./005-pwa-first.md)
 - [ADR-006: No platform-held payments in MVP](./006-no-custodied-payments.md)
-- [ADR-007: SQLite persistence for the single-node pilot](./007-sqlite-pilot-persistence.md)
+- [ADR-007: SQLite persistence for the single-node pilot](./007-sqlite-pilot-persistence.md) (superseded by ADR-008)
+- [ADR-008: PostgreSQL document tables with a per-request unit of work](./008-document-store-unit-of-work.md)
 
 ## Template
 
