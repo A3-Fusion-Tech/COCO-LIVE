@@ -11,7 +11,7 @@
     "dev:worker": "npm start -w @livecoco/worker",
     "dev:web": "npm run dev -w @livecoco/web",
     "build:web": "npm run build -w @livecoco/web",
-    "start:web": "node --import tsx ./apps/web/src/server.ts",
+    "start:web": "npm run start -w @livecoco/web",
     "build": "tsc -p tsconfig.check.json",
     "test": "node --import tsx --test --test-reporter=spec \"tests/**/*.test.ts\"",
     "lint": "node ./scripts/lint.mjs",

@@ -14,7 +14,7 @@ This document states precisely what is implemented, how it is verified, and what
 | `packages/test-support` | Fake clock, world builder (call services as a participant: `w.as(login).lots.create(…)`), sample terms |
 | `apps/api` | Stateless services per module (`src/modules/*`: identity, prices, marketplace, deals, fulfilment, media, operations), wired in `src/app.ts`; one NestJS feature module and controller each, sharing the request pipeline in `src/http` — see [endpoints](../api/endpoints.md) |
 | `apps/worker` | AGMARKNET adapter, ingest/maintenance/housekeeping jobs and outbox delivery, running the API services directly against Postgres |
-| `apps/web` | Next.js (App Router, React): server-rendered public price page (`/`); installable PWA (`/app/`, React client components) for farmers, buyers, FPOs, partners and operators; route-handler gateway (`/session/*`, `/v1/*`) keeping the session in an HttpOnly cookie; nonce-based CSP; framework-free handlers in `src/gateway.ts` |
+| `apps/web` | Next.js App Router: ISR price board per language (`/ta`, `/en`); public market and sign-in; signed-in route group for every role with server-side data fetching and Server Actions; typed API client; same-origin `/v1` proxy keeping the session in an HttpOnly cookie; nonce-based CSP — see [apps/web](../../apps/web/README.md) |
 | `apps/mobile` | Flutter Android app (Tamil-first, English): public price board with evidence and MSP, phone OTP sign-in with the bearer token in the platform keystore, price alerts with consent, market, sell lots, buy requirements, offer threads and deal cards — see [apps/mobile](../../apps/mobile/README.md) |
 
 ## Feature coverage

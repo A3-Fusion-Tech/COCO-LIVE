@@ -1,49 +1,54 @@
 # Web application
 
-Next.js (App Router, React, TypeScript) web tier ([ADR-009](../../docs/decisions/009-nextjs-nestjs-flutter.md)):
+Next.js (App Router, React, TypeScript) web tier ([ADR-009](../../docs/decisions/009-nextjs-nestjs-flutter.md)). It provides:
 
-- Public, server-rendered Tamil/English price page at `/`.
-- The installable PWA at `/app/` for farmers, buyers, FPOs, partners and operators (prices, evidence and alerts; sign-in; market; sell; buy; offers and deals; FPO aggregation and settlement; partner workspace; operations console with OTP step-up).
-- A same-origin gateway to the API that keeps the session out of JavaScript.
+- the public Tamil/English price board;
+- the public market and sign-in;
+- signed-in workflows for every role: sell, buy, offers and deals, alerts, FPO aggregation and settlement, the partner workspace, and the operations console with OTP step-up.
 
 Implementation must follow [the product requirements](../../docs/product/requirements.md), [API conventions](../../docs/api/conventions.md) and [privacy controls](../../docs/security/privacy.md).
 
 ## Running
 
 ```text
-API_BASE_URL=http://localhost:4000 npm run dev:web       # next dev on :3000 → http://localhost:3000/app/
-npm run build:web && API_BASE_URL=http://localhost:4000 npm run start:web   # production build behind src/server.ts
+API_BASE_URL=http://localhost:4000 npm run dev:web                            # next dev on :3000
+npm run build:web && API_BASE_URL=http://localhost:4000 npm run start:web     # next start (no custom server)
 ```
 
-Environment: `API_BASE_URL` (default `http://localhost:4000`), `PORT` (default 3000), `COOKIE_SECURE` (`1`/`0`; defaults to on when `NODE_ENV=production`). They are read per request, never inlined at build time. In development open `localhost`, not `127.0.0.1`: `next dev` blocks other origins from its dev resources unless they are listed in `allowedDevOrigins`.
+These settings are read per request and are never inlined at build time:
 
-`npm run start:web` runs `src/server.ts`, a small `node:http` wrapper around Next's production server (`next({ dev: false })`), rather than `next start`: it overwrites `x-forwarded-for` with the socket address so a client cannot choose the address the API rate-limits on (`next start` keeps a client-sent value). The e2e test boots the same server through `createWeb({ apiBaseUrl })`.
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `API_BASE_URL` | `http://localhost:4000` | Where the API lives. |
+| `COOKIE_SECURE` | on when `NODE_ENV=production` | `1`/`0`: mark the session cookie `Secure`. |
+| `TRUST_PROXY` | off | `1` only when a reverse proxy in front of the web tier appends the real client address to `x-forwarded-for`. |
+
+When `TRUST_PROXY` is set, the last `x-forwarded-for` entry is forwarded to the API for rate limiting. Otherwise no client address is forwarded, so a client can never choose the address it is rate-limited on.
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `app/route.ts` | Public price page (`/`), rendered by `src/render.ts`. A Route Handler, not a page: App Router pages cannot answer `503 Prices temporarily unavailable` or send `cache-control: public, max-age=60`. Locale from `?lang=` then `Accept-Language` (`packages/localization`). |
-| `app/app/page.tsx`, `app/app/_ui/*` | The PWA: a client-side shell with hash routes (`#/sell`, `#/deals/<id>`…), the Tamil/English toggle (`src/i18n.ts`) and one async page function per screen. Each page loads its data and is swapped in whole, so a reload resets local form state as before. |
-| `app/session/verify`, `app/session/logout` | `POST /session/verify` proxies `/v1/auth/otp/verify` and stores the token only in the `lc_session` cookie (`HttpOnly; SameSite=Strict; Path=/`, `Secure` in production); the token is never returned to the page. |
-| `app/v1/[...path]` | `/v1/*` proxy: attaches `Authorization: Bearer` from the cookie; forwards `content-type`, `idempotency-key`, `if-match`, `accept-language`, `x-correlation-id` and `x-forwarded-for`; requires `x-requested-with` on mutations except signed `PUT /v1/uploads/*`; answers 404 for `/v1/internal/*`; strips upstream `set-cookie`; streams binary media through. |
-| `app/healthz`, `app/sw.js`, `app/manifest.webmanifest` | Health check, offline service worker (network-first; caches the shell, Next's static assets and public price/lot reads) and the localized web manifest. |
-| `proxy.ts` | Redirects `/app` to `/app/` and sets the app's CSP with a fresh nonce per request. |
-| `src/gateway.ts` | The framework-free `Request → Response` handlers behind the routes above; unit-tested in `tests/http.test.ts` without a Next build. |
+| `app/(board)/[lang]` | Public price board at `/ta` and `/en`: a server component regenerated every minute (ISR), identical for everyone, with its own error and 404 states. `/` redirects to the visitor's language. |
+| `app/(site)/(public)` | Market and lot pages, price evidence and sign-in. |
+| `app/(site)/(app)` | Signed-in sections: `sell`, `buy`, `deals`, `alerts`, `org`, `partner`, `me`, `ops`. The group's layout validates the session. Pages fetch on the server with the session cookie. Mutations are Server Actions (`actions.ts` next to each page), and client components exist only where interaction needs them (forms, photo upload). |
+| `app/_components`, `app/_lib` | Shared chrome, form and UI components, and the server-side helpers that build an API client for the current request. |
+| `app/v1/[...path]` | Same-origin `/v1` proxy for browser code (signed photo uploads, the service worker's public reads). It attaches the bearer token from the cookie, requires `x-requested-with` on mutations except signed uploads, returns 404 for `/v1/internal/*`, and strips upstream `set-cookie`. |
+| `app/manifest.ts`, `public/sw.js`, `app/healthz` | PWA manifest, the offline service worker (never caches signed-in pages) and the health check. |
+| `lib/api` | Typed API client (`client.ts`), resource types (`types.ts`) and problem+json handling (`errors.ts`). |
+| `lib/gateway` | Runtime config, the session cookie (`lc_session`: `HttpOnly; SameSite=Strict`, `Secure` in production) and the `/v1` proxy. The session token never reaches page JavaScript. |
+| `lib/i18n` | Locale resolution (`?lang=`, then the `lc_lang` cookie, then `Accept-Language`; Tamil by default) and the message catalog. |
+| `lib/security/csp.ts`, `proxy.ts` | Per-request CSP nonce for app pages and a static policy for the board. `proxy.ts` also does the language redirect and remembers `?lang=`, and sends signed-out visitors of app sections to `/login`. |
 
-## Content Security Policy
+## Security
 
-`/app/` is served with:
-
-```text
-default-src 'self'; img-src 'self' blob: data:; style-src 'self'; script-src 'self' 'nonce-<per request>';
-connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'
-```
-
-plus `x-content-type-options: nosniff` (sent on every response). The one change from the old app's `script-src 'self'` is the nonce: Next.js streams the React Server Components payload in inline `<script>` tags, and those cannot run under `'self'` alone. Next reads the nonce from the request's CSP header (set in `proxy.ts`) and puts it on its own inline and external scripts, which is why the page renders per request (`connection()`). There is no `'unsafe-inline'` or `'unsafe-eval'` in production; `next dev` only adds `'unsafe-eval'` and inline styles for React's dev tooling and error overlay. Styles come from the bundled `app.css`, and the UI uses no inline `style` attributes.
-
-The public price page keeps its previous policy (`default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'`). That page is self-contained HTML with one inline style block and one inline script that registers the service worker.
+- App pages are sent with `script-src 'self' 'nonce-<per request>'`, `object-src 'none'`, `frame-ancestors 'none'` and `base-uri 'none'`. There is no `'unsafe-inline'` or `'unsafe-eval'` in production.
+- Server Actions reject requests from a foreign `Origin`.
+- `x-content-type-options: nosniff` is sent on every response.
 
 ## Tests
 
-`tests/http.test.ts` covers the price page (Tamil/English, freshness, MSP, 503) and the gateway (cookie flags, no token in JSON, CSRF header, internal 404, no upstream `set-cookie`). `npm run test:e2e` builds the app and drives it in Chromium through Playwright.
+- `tests/web.test.ts` covers, without a Next build:
+  - the gateway and proxy: cookie flags, CSRF, internal 404s, IP forwarding;
+  - locale resolution, the CSP, the API client, price-card formatting, form parsing, and the manifest and service worker.
+- `npm run test:e2e` builds the app, starts `next start` against an in-memory API and drives the whole seller → buyer → completed-deal flow, the language switch, the security checks and the operator console in Chromium through Playwright.

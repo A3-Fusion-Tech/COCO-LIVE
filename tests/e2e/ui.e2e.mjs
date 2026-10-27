@@ -12,20 +12,22 @@ let chromium;
 try { ({ chromium } = require("playwright")); } catch { console.log("playwright not installed; skipping UI e2e"); process.exit(0); }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const { Platform } = await import("../../apps/api/src/platform.ts");
-const { createApp } = await import("../../apps/api/src/server.ts");
+const { LiveCoco, createApp, Collections } = await import("@livecoco/api");
 
 const freePort = () => new Promise((resolve) => { const s = createServer(); s.listen(0, "127.0.0.1", () => { const { port } = s.address(); s.close(() => resolve(port)); }); });
 
 const otps = new Map();
-const p = new Platform({ deliverOtp: (ph, c) => otps.set(ph, c), operators: { "+919000000001": ["ops.price_review", "ops.source_health", "ops.verification", "ops.listings", "ops.disputes", "ops.audit"] } });
-const api = await createApp({ platform: p, internalToken: "tok" });
+// The web port is chosen first so signed upload URLs point at the web origin (uploads go through its /v1 proxy).
+const webPort = await freePort();
+const base = `http://127.0.0.1:${webPort}`;
+const app = new LiveCoco({ baseUrl: base, deliverOtp: (ph, c) => otps.set(ph, c), operators: { "+919000000001": ["ops.price_review", "ops.source_health", "ops.verification", "ops.listings", "ops.disputes", "ops.audit"] } });
+const sv = app.services;
+const claims = () => app.run((s) => s.tx.find(Collections.claims));
+const api = await createApp({ app });
 await new Promise((r) => api.listen(0, "127.0.0.1", r));
 const apiBase = `http://127.0.0.1:${api.address().port}`;
 
 // The production server exactly as deployed: `next start` (no custom server), configured through the environment.
-const webPort = await freePort();
-const base = `http://127.0.0.1:${webPort}`;
 const web = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", join(root, "apps", "web"), "-p", String(webPort), "-H", "127.0.0.1"], {
   env: { ...process.env, API_BASE_URL: apiBase, COOKIE_SECURE: "0", NODE_ENV: "production", NEXT_TELEMETRY_DISABLED: "1" },
   stdio: ["ignore", "inherit", "inherit"],
@@ -35,9 +37,8 @@ for (let i = 0; ; i++) {
   if (i > 150) throw new Error("web did not start");
   await new Promise((r) => setTimeout(r, 200));
 }
-p.fx.baseUrl = base;
 
-p.ingestRaw("agmarknet", [{ state: "Tamil Nadu", market: "Pollachi", commodity: "Coconut", grade: "FAQ", arrival_date: new Date().toLocaleDateString("en-GB"), min_price: "2900", max_price: "3200", modal_price: "3050", price_unit: "Rs./Quintal" }]);
+await app.run((s) => sv.prices.ingestRaw(s, "agmarknet", [{ state: "Tamil Nadu", market: "Pollachi", commodity: "Coconut", grade: "FAQ", arrival_date: new Date().toLocaleDateString("en-GB"), min_price: "2900", max_price: "3200", modal_price: "3050", price_unit: "Rs./Quintal" }]));
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
 const failures = [];
@@ -60,12 +61,14 @@ async function newUser(phone) {
   await page.waitForSelector('nav a[href="/sell"]');
   return { ctx, page };
 }
-const approveClaim = (phone) => {
-  const u = [...p.users.values()].find((x) => x.phone === "+91" + phone);
-  const c = p.submitClaim(u, "PERSON_IDENTITY", {}, ["doc"]);
-  p.claims.get(c.claimId).status = "APPROVED";
-  for (const q of p.queue.values()) if (q.subject === c.claimId) q.status = "DONE";
-};
+/** Approves a PERSON_IDENTITY claim for the user directly in the store (stands in for an operator decision). */
+const approveClaim = (phone) => app.run(async (s) => {
+  const [u] = await s.tx.find(Collections.users, { phone: "+91" + phone });
+  s.actor = { user: u, session: { token: "", userId: u.userId, createdAt: "", stepUpUntil: 0, revoked: false, device: "e2e" } };
+  const c = await sv.identity.submitClaim(s, "PERSON_IDENTITY", {}, ["doc"]);
+  s.tx.put(Collections.claims, c.claimId, { ...c, status: "APPROVED", verifiedAt: s.iso(), decidedBy: "e2e", reasonCode: "E2E" });
+  await sv.queue.close(s, c.claimId);
+});
 
 try {
   // public price board: server-rendered, Tamil/English, cacheable, linked to the app
@@ -90,7 +93,7 @@ try {
 
   // seller signs in, creates + uploads + publishes a lot
   const s = await newUser("9800000001");
-  approveClaim("9800000001");
+  await approveClaim("9800000001");
   await s.page.goto(`${base}/sell`);
   await s.page.waitForSelector('button:has-text("Create")');
   const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 16);
@@ -107,7 +110,7 @@ try {
   await s.page.setInputFiles("input[type=file]", { name: "lot.png", mimeType: "image/png", buffer: png });
   await s.page.waitForSelector("text=Photo uploaded");
   check(true, "photo uploaded through the signed URL via the /v1 proxy");
-  await fetch(`${apiBase}/v1/internal/tick`, { method: "POST", headers: { "x-internal-token": "tok", "content-type": "application/json" }, body: "{}" });
+  await app.run((s) => sv.maintenance.housekeeping(s)); // the worker's job: scan the upload so the photo counts
   await s.page.reload();
   await s.page.click('button:has-text("Publish")');
   await s.page.waitForSelector("text=Active");
@@ -115,7 +118,7 @@ try {
 
   // buyer sees it in the market and makes an offer from the lot page
   const b = await newUser("9800000002");
-  approveClaim("9800000002");
+  await approveClaim("9800000002");
   await b.page.goto(`${base}/market`);
   await b.page.waitForSelector("text=available");
   await b.page.click('a.btn:has-text("Make an offer")');
@@ -192,8 +195,8 @@ try {
   const card = o.page.locator('.card:has-text("PERSON_IDENTITY claim submitted")').first();
   await card.locator('label:has-text("Reason") + input').fill("DOCS_OK");
   await card.locator("button[type=submit]").click();
-  for (let i = 0; i < 40 && ![...p.claims.values()].some((x) => x.reasonCode === "DOCS_OK"); i++) await new Promise((r) => setTimeout(r, 100));
-  check([...p.claims.values()].some((x) => x.status === "APPROVED" && x.decidedBy && x.reasonCode === "DOCS_OK"), "operator approved the claim with a reason code");
+  for (let i = 0; i < 40 && !(await claims()).some((x) => x.reasonCode === "DOCS_OK"); i++) await new Promise((r) => setTimeout(r, 100));
+  check((await claims()).some((x) => x.status === "APPROVED" && x.decidedBy && x.reasonCode === "DOCS_OK"), "operator approved the claim with a reason code");
 
   // sign out clears the session
   await c.page.goto(`${base}/me`);

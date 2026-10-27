@@ -160,8 +160,8 @@ test("locale: ?lang= then cookie then Accept-Language, Tamil by default; catalog
   assert.equal(resolveLocale({ query: "xx", cookie: "en" }), "en");
   assert.deepEqual(missingUiKeys(), [{ locale: "ta", keys: [] }, { locale: "en", keys: [] }]);
   const ta = translator("ta");
-  assert.equal(ta("nav.prices"), "à®µà®¿à®²à¯ˆà®•à®³à¯");
-  assert.equal(ta("price.not_offer").includes("à®‰à®¤à¯à®¤à®°à®µà®¾à®¤à®®à®¾à®©"), true, "falls back to the shared domain catalog");
+  assert.equal(ta("nav.prices"), "விலைகள்");
+  assert.equal(ta("price.not_offer").includes("உத்தரவாதமான"), true, "falls back to the shared domain catalog");
   assert.equal(ta("no.such.key"), "no.such.key");
   assert.equal(statusLabel(translator("en"), "PAYMENT_CONFIRMED"), "Payment confirmed");
   assert.equal(statusLabel(translator("en"), "SOMETHING_NEW"), "SOMETHING_NEW");
@@ -169,8 +169,8 @@ test("locale: ?lang= then cookie then Accept-Language, Tamil by default; catalog
 
 const PRICE: PriceItem = {
   priceAggregateId: null, kind: "OFFICIAL_OBSERVATION_ONLY",
-  product: { productId: "prod_mature_coconut", name: "Mature coconut", nameTa: "à®®à¯à®±à¯à®±à®¿à®¯ à®¤à¯‡à®™à¯à®•à®¾à®¯à¯" },
-  market: { marketId: "market_pollachi", name: "Pollachi", nameTa: "à®ªà¯Šà®³à¯à®³à®¾à®šà¯à®šà®¿" },
+  product: { productId: "prod_mature_coconut", name: "Mature coconut", nameTa: "முற்றிய தேங்காய்" },
+  market: { marketId: "market_pollachi", name: "Pollachi", nameTa: "பொள்ளாச்சி" },
   stage: "REGULATED_MARKET", tradeTerm: "AT_MARKET", gradeGroup: "FAQ",
   range: { low: { amountPaise: 2900, currency: "INR" }, reference: { amountPaise: 3050, currency: "INR" }, high: { amountPaise: 3200, currency: "INR" }, perUnit: "QUINTAL" },
   observedWindow: { startsAt: "2026-10-01T04:00:00Z", endsAt: "2026-10-01T04:00:00Z" },
@@ -181,22 +181,22 @@ const PRICE: PriceItem = {
 
 test("price board cards: Tamil/English names, range, freshness, evidence and notes as text", () => {
   const en = priceCardView(PRICE, "en");
-  assert.equal(en.title, "Mature coconut Â· Pollachi");
-  assert.equal(en.meta, "Regulated market Â· At market Â· FAQ Â· quintal");
+  assert.equal(en.title, "Mature coconut · Pollachi");
+  assert.equal(en.meta, "Regulated market · At market · FAQ · quintal");
   assert.deepEqual(en.range.map((r) => r.label), ["Low", "Reference", "High"]);
-  assert.match(en.range[1]?.value ?? "", /â‚¹\s?30\.50/);
-  assert.equal(en.status, "Current Â· Low confidence");
+  assert.match(en.range[1]?.value ?? "", /₹\s?30\.50/);
+  assert.equal(en.status, "Current · Low confidence");
   assert.match(en.reported, /^Reported at /);
   assert.match(en.note ?? "", /No current verified range/);
   assert.deepEqual(en.bucket, { productId: "prod_mature_coconut", marketId: "market_pollachi", unit: "QUINTAL", stage: "REGULATED_MARKET" });
   const ta = priceCardView(PRICE, "ta");
-  assert.equal(ta.title, "à®®à¯à®±à¯à®±à®¿à®¯ à®¤à¯‡à®™à¯à®•à®¾à®¯à¯ Â· à®ªà¯Šà®³à¯à®³à®¾à®šà¯à®šà®¿");
+  assert.equal(ta.title, "முற்றிய தேங்காய் · பொள்ளாச்சி");
   const stale = priceCardView({ ...PRICE, freshness: "STALE", messageKey: "price.stale" }, "en");
   assert.match(stale.reported, /^Last reported for /);
   assert.match(stale.status, /^Stale/);
   assert.equal(priceCardView({ ...PRICE, messageKey: null }, "en").note, null);
-  const catalog = { products: [{ productId: "prod_milling_copra" as const, name: { en: "Milling copra", ta: "à®•à¯Šà®ªà¯à®ªà®°à¯ˆ (à®†à®²à¯ˆ)" }, units: [], stages: [], requiredAttributes: [] }], markets: [] };
-  assert.match(mspLine({ productId: "prod_milling_copra", unit: "QUINTAL", amountPaise: 1_133_500, seasonLabel: "2026" }, "en", catalog), /^Milling copra: â‚¹\s?11,335 \/ quintal â€” 2026$/);
+  const catalog = { products: [{ productId: "prod_milling_copra" as const, name: { en: "Milling copra", ta: "கொப்பரை (ஆலை)" }, units: [], stages: [], requiredAttributes: [] }], markets: [] };
+  assert.match(mspLine({ productId: "prod_milling_copra", unit: "QUINTAL", amountPaise: 1_133_500, seasonLabel: "2026" }, "en", catalog), /^Milling copra: ₹\s?11,335 \/ quintal — 2026$/);
 });
 
 test("form input: rupees to paise exactly, datetime-local read as Indian time", () => {

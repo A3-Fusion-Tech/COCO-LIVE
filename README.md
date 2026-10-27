@@ -87,7 +87,7 @@ npm run db:migrate                            # applies migrations (also done au
 npm run seed                                  # optional: synthetic local users
 OPERATOR_PHONES=+919000000001 npm run dev     # API on :4000 (OTPs are printed to the console in development)
 DATABASE_URL=... npm run dev:worker          # ingestion, expiry, alerts, notification delivery
-API_BASE_URL=http://localhost:4000 npm run dev:web   # Next.js web on :3000 → open http://localhost:3000/app/
+API_BASE_URL=http://localhost:4000 npm run dev:web   # Next.js web on :3000 → open http://localhost:3000/
 ```
 
 Mobile (Flutter, Android first): with the API running, `cd apps/mobile && flutter pub get && flutter run` (the emulator reaches the API at `http://10.0.2.2:4000`; pass `--dart-define=API_BASE_URL=...` for a device or another server). See [apps/mobile/README.md](./apps/mobile/README.md).
