@@ -86,7 +86,7 @@ export DATABASE_URL=postgresql://livecoco:livecoco@localhost:5432/livecoco
 npm run db:migrate                            # applies migrations (also done automatically at API start)
 npm run seed                                  # optional: synthetic local users
 OPERATOR_PHONES=+919000000001 npm run dev     # API on :4000 (OTPs are printed to the console in development)
-INTERNAL_API_TOKEN=... npm run dev:worker     # ingestion, expiry, alerts, notification delivery
+DATABASE_URL=... npm run dev:worker          # ingestion, expiry, alerts, notification delivery
 API_BASE_URL=http://localhost:4000 npm run dev:web   # Next.js web on :3000 → open http://localhost:3000/app/
 ```
 

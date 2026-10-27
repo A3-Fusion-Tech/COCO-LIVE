@@ -1,6 +1,6 @@
 // Seeds a LOCAL database with synthetic development actors (never real data).
 // The canonical catalog lives in code (packages/domain/src/catalog.ts); no catalog rows are needed.
-import { Platform } from "../apps/api/src/platform.ts";
+import { Collections } from "@livecoco/api";
 import { PgStore } from "@livecoco/database";
 
 const url = process.env.DATABASE_URL;
@@ -8,17 +8,18 @@ if (!url) throw new Error("DATABASE_URL is required");
 const host = new URL(url).hostname;
 if (!["localhost", "127.0.0.1", "::1", "db", "postgres"].includes(host) || process.env.NODE_ENV === "production") throw new Error(`Refusing to seed non-local database '${host}'`);
 
-const store = new PgStore({ connectionString: url });
+const OPS = ["ops.price_review", "ops.source_health", "ops.verification", "ops.listings", "ops.disputes", "ops.audit"];
+const store = new PgStore({ connectionString: url, poolSize: 1 });
 await store.migrate();
-await store.acquireWriterLock();
-const p = new Platform({ operators: { "+919000000001": ["ops.price_review", "ops.source_health", "ops.verification", "ops.listings", "ops.disputes", "ops.audit"] } });
-await store.load(p);
-await store.withTransaction(p, () => {
-  if (p.users.size) return;
-  for (const x of [{ phone: "+919000000001", name: "Dev Operator" }, { phone: "+919000000002", name: "Dev Farmer" }, { phone: "+919000000003", name: "Dev Buyer" }]) {
-    const u = { userId: `user_seed_${x.phone.slice(-2)}`, phone: x.phone, displayName: x.name, actingAs: "INDEPENDENT", organizationIds: [], capabilities: p.cfg.operators[x.phone] ?? [], suspended: false, blocked: [], locale: "ta", createdAt: p.iso() };
-    p.users.set(u.userId, u);
+const created = await store.run(async (tx) => {
+  let n = 0;
+  for (const x of [{ phone: "+919000000001", name: "Dev Operator", ops: true }, { phone: "+919000000002", name: "Dev Farmer" }, { phone: "+919000000003", name: "Dev Buyer" }]) {
+    if ((await tx.find(Collections.users, { phone: x.phone })).length) continue;
+    const userId = `user_seed_${x.phone.slice(-2)}`;
+    tx.put(Collections.users, userId, { userId, phone: x.phone, displayName: x.name, actingAs: "INDEPENDENT", organizationIds: [], capabilities: x.ops ? OPS : [], suspended: false, blocked: [], locale: "ta", createdAt: new Date().toISOString() });
+    n++;
   }
+  return n;
 });
-console.log(`seeded ${p.users.size} synthetic development users`);
+console.log(`seeded ${created} synthetic development users`);
 await store.close();

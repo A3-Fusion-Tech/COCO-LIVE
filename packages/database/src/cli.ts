@@ -3,7 +3,7 @@ import { PgStore } from "./pg.ts";
 const cmd = process.argv[2];
 const url = process.env.DATABASE_URL;
 if (!url) { console.error("DATABASE_URL is required"); process.exit(1); }
-const store = new PgStore({ connectionString: url, requireWriterLock: false });
+const store = new PgStore({ connectionString: url, poolSize: 1 });
 try {
   if (cmd === "migrate") {
     const ran = await store.migrate();
@@ -18,7 +18,7 @@ try {
     await store.pool.query("drop schema public cascade; create schema public;");
     console.log("schema reset; applied:", (await store.migrate()).join(", "));
   } else {
-    console.error("usage: db.ts migrate|reset");
+    console.error("usage: cli.ts migrate|reset");
     process.exit(1);
   }
 } finally {

@@ -1,13 +1,10 @@
 import type { Logger, Metrics } from "@livecoco/observability";
-import type { PgStore } from "@livecoco/database";
-import type { Platform } from "../platform.ts";
+import type { LiveCoco } from "../app.ts";
 
 export interface ApiOptions {
-  platform: Platform;
+  app: LiveCoco;
   /** Trust x-forwarded-for from the web gateway (set only when the API is not directly reachable). */
   trustProxy?: boolean;
-  store?: PgStore;
-  internalToken?: string;
   logger?: Logger;
   metrics?: Metrics;
   maxBodyBytes?: number;

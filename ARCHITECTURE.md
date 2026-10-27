@@ -137,6 +137,15 @@ flowchart TB
 
 Modules may call another module through its application interface, never by writing directly to another module’s tables. Database foreign keys can preserve integrity, but business mutations remain owned by their module.
 
+### How the modules are implemented
+
+[ADR-010](./docs/decisions/010-stateless-services-row-locked-units-of-work.md) describes this in full.
+
+- **Code layout.** Each module is a folder in `apps/api/src/modules/` containing stateless services, one NestJS feature module and a thin controller. Pure business rules (state machines, validation, aggregation, matching) live in `packages/domain` and have no I/O.
+- **Unit of work.** Every request or background job runs as one unit of work (`packages/database`). Services receive a `Scope` (the transaction, clock, correlation id and actor), read only the rows they need, and write explicitly. The writes are committed in one Postgres transaction. In a mutating request, the rows it reads are locked, so conflicting requests serialise on those rows and nowhere else.
+- **No process state.** The API and the worker hold no state, so any number of each can run against one database. The worker calls the same services directly instead of going through HTTP.
+- **Cross-module calls.** Modules call each other's services; they do not touch each other's collections. The dependency graph is acyclic and wired once in `apps/api/src/app.ts`.
+
 ## 5. Recommended technical stack
 
 The confirmed stack is Next.js (web), NestJS (API) and Flutter (mobile) on PostgreSQL ([ADR-009](./docs/decisions/009-nextjs-nestjs-flutter.md)):

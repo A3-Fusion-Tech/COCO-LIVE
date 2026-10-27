@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Catch, NotFoundException, type ArgumentsHost, type CallHandler, type ExceptionFilter, type ExecutionContext, type NestInterceptor } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
@@ -8,7 +7,6 @@ import { DomainError } from "@livecoco/domain";
 import { check, problem, type FieldError, type Shape } from "@livecoco/contracts";
 import { newCorrelationId, type Logger, type Metrics } from "@livecoco/observability";
 import { parseLocale, t, type Locale } from "@livecoco/localization";
-import type { Session, User } from "../platform.ts";
 import type { ApiOptions } from "./options.ts";
 import { ROUTE_META, type Ctx } from "./route-kit.ts";
 
@@ -45,19 +43,18 @@ export class LiveCocoAdapter extends ExpressAdapter {
 
 /** Runs before routing: correlation id, locale, client IP, health probes and the per-IP rate limit. */
 export function preRouting(opts: ApiOptions, metrics: Metrics) {
-  const { platform: p } = opts;
+  const clock = opts.app.cfg.clock;
   const buckets = new Map<string, { n: number; reset: number }>();
   const limit = opts.requestsPerMinute ?? 300;
   return (req: LcRequest, res: ServerResponse, next: () => void) => {
     const cid = (req.headers["x-correlation-id"] as string | undefined)?.slice(0, 64) || newCorrelationId();
-    p.correlationId = cid;
     res.setHeader("x-correlation-id", cid);
     const url = new URL(req.url ?? "/", "http://x");
     const ip = (opts.trustProxy ? String(req.headers["x-forwarded-for"] ?? "").split(",")[0]?.trim() : "") || req.socket.remoteAddress || "?";
     req.lc = { cid, locale: parseLocale(req.headers["accept-language"] as string | undefined, url.searchParams.get("lang")), ip, url };
     if (url.pathname === "/healthz") return writeJson(res, 200, { status: "ok" }, cid);
     if (url.pathname === "/readyz") return writeJson(res, 200, { status: "ready", metrics: metrics.snapshot() }, cid);
-    const now = p.now().getTime();
+    const now = clock().getTime();
     const b = buckets.get(ip);
     if (!b || b.reset < now) buckets.set(ip, { n: 1, reset: now + 60_000 });
     else if (++b.n > limit) { res.setHeader("retry-after", "30"); return writeProblem(res, req, 429, "RATE_LIMITED", "Too many requests", "Retry later", [], "error.rate_limited"); }
@@ -82,31 +79,28 @@ class ValidationFailed extends Error {
 class BodyNotObject extends Error {}
 
 /**
- * The request pipeline for every JSON route: body parsing and validation, then one serialised
- * unit of work (ADR-008) covering the service-token check, session authentication, idempotency
- * and the controller method itself.
+ * The request pipeline for every JSON route: body parsing and validation, then one unit of work (ADR-010)
+ * covering session authentication, idempotency and the controller method itself. GET requests run without
+ * row locks; everything else locks the rows it reads.
  */
-export class PlatformInterceptor implements NestInterceptor {
+export class RequestInterceptor implements NestInterceptor {
   private readonly opts: ApiOptions;
   private readonly metrics: Metrics;
   private readonly reflector = new Reflector();
   constructor(opts: ApiOptions, metrics: Metrics) { this.opts = opts; this.metrics = metrics; }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const handler = context.getHandler();
-    if (this.reflector.get<boolean>(ROUTE_META.binary, handler)) return next.handle();
+    if (this.reflector.get<boolean>(ROUTE_META.binary, context.getHandler())) return next.handle();
     return from(this.run(context, next));
   }
 
   private async run(context: ExecutionContext, next: CallHandler): Promise<Envelope> {
-    const { platform: p, store } = this.opts;
+    const { app } = this.opts;
     const handler = context.getHandler();
     const meta = <T>(key: string) => this.reflector.get<T>(key, handler);
-    const isPublic = meta<boolean>(ROUTE_META.public) ?? false;
-    const internal = meta<boolean>(ROUTE_META.internal) ?? false;
+    const auth = !(meta<boolean>(ROUTE_META.public) ?? false);
     const idem = meta<boolean>(ROUTE_META.idempotent) ?? false;
     const shape = meta<Shape>(ROUTE_META.shape);
-    const auth = !isPublic && !internal;
     const req = context.switchToHttp().getRequest<LcRequest>();
     const { cid, locale, ip, url } = req.lc;
 
@@ -117,25 +111,14 @@ export class PlatformInterceptor implements NestInterceptor {
       const errs = check(body, shape);
       if (errs.length) throw new ValidationFailed(errs);
     }
-    const exec = async () => {
-      p.correlationId = cid;
-      let user: User | undefined, session: Session | undefined;
-      if (internal) {
-        const given = Buffer.from(String(req.headers["x-internal-token"] ?? ""));
-        const want = Buffer.from(this.opts.internalToken ?? "");
-        if (!want.length || given.length !== want.length || !timingSafeEqual(given, want)) throw new DomainError("NOT_FOUND", 404, "No such endpoint", "error.not_found");
-      }
-      if (auth) {
-        const h = req.headers.authorization;
-        ({ user, session } = p.authenticate(h?.startsWith("Bearer ") ? h.slice(7) : undefined));
-      }
-      const ifMatchHeader = req.headers["if-match"];
-      req.lcCtx = { p, ip, body, params: { ...req.params }, query: url.searchParams, user: user as User, session: session as Session, locale, idemKey: req.headers["idempotency-key"] as string | undefined, ifMatch: ifMatchHeader ? Number(String(ifMatchHeader).replace(/"/g, "")) : undefined };
-      const run = () => lastValueFrom(next.handle());
-      return idem ? p.idempotentAsync(user?.userId ?? ip, `${req.method} ${url.pathname}`, req.lcCtx.idemKey, body, run) : run();
-    };
-    // With a store, each request is one serialised unit of work: commit on success, restore on failure.
-    const out = await (store ? store.withTransaction(p, exec, { readOnly: req.method === "GET" }) : exec());
+    const h = req.headers.authorization;
+    const ifMatchHeader = req.headers["if-match"];
+    const out = await app.run(async (s) => {
+      req.lcCtx = { s, ip, body, params: { ...req.params }, query: url.searchParams, locale, ifMatch: ifMatchHeader ? Number(String(ifMatchHeader).replace(/"/g, "")) : undefined };
+      const handle = () => lastValueFrom(next.handle());
+      if (!idem) return handle();
+      return app.services.idempotency.run(s, s.actor?.user.userId ?? ip, `${req.method} ${url.pathname}`, req.headers["idempotency-key"] as string | undefined, body, handle);
+    }, { cid, write: req.method !== "GET", ...(auth ? { token: h?.startsWith("Bearer ") ? h.slice(7) : undefined } : {}) });
     this.metrics.inc(`http.${req.method}.ok`);
     if (out && typeof out === "object" && "raw" in out) { const r = out as { status: number; raw: string; contentType: string }; return { __lc: true, status: r.status, raw: r.raw, headers: { "content-type": r.contentType } }; }
     if (out && typeof out === "object" && "status" in out && "body" in out) return { __lc: true, status: (out as { status: number }).status, body: (out as { body: unknown }).body, headers: {} };

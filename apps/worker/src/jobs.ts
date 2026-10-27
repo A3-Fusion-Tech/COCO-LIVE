@@ -1,6 +1,9 @@
+import type { LiveCoco, OutboxMessage } from "@livecoco/api";
 import { AgmarknetAdapter } from "./agmarknet.ts";
 
-/** Where fetched records go: in-process (tests) or the API's internal endpoints (production). */
+export type { OutboxMessage };
+
+/** Where fetched records go. */
 export interface IngestSink {
   ingest(source: string, records: Record<string, unknown>[]): Promise<{ stored: number; duplicates: number; observations: number; unmapped: number }>;
   failure(source: string, error: string): Promise<void>;
@@ -26,29 +29,18 @@ export async function runAgmarknetIngest(sink: IngestSink, adapter: AgmarknetAda
   }
 }
 
-/** HTTP sink for the API's `/v1/internal/*` endpoints. */
-export class HttpSink implements IngestSink {
-  private base: string;
-  private token: string;
-  private fetchImpl: typeof fetch;
-  constructor(base: string, token: string, fetchImpl: typeof fetch = fetch) {
-    this.base = base;
-    this.token = token;
-    this.fetchImpl = fetchImpl;
-  }
-  rawPost(path: string, body: unknown): Promise<unknown> { return this.post(path, body); }
-  private async post<T>(path: string, body: unknown): Promise<T> {
-    const res = await this.fetchImpl(`${this.base}/v1/internal/${path}`, { method: "POST", headers: { "content-type": "application/json", "x-internal-token": this.token }, body: JSON.stringify(body) });
-    if (!res.ok) throw new Error(`internal API ${path} failed with ${res.status}`);
-    return (await res.json()) as T;
-  }
-  ingest(source: string, records: Record<string, unknown>[]) { return this.post<{ stored: number; duplicates: number; observations: number; unmapped: number }>("ingest", { source, records }); }
-  async failure(source: string, error: string) { await this.post("source-failure", { source, error }); }
-  tick() { return this.post<Record<string, number>>("tick", {}); }
-}
+/** The worker's sink: each call is one unit of work against the shared database. */
+export const appSink = (app: LiveCoco): IngestSink => ({
+  ingest: (source, records) => app.run(async (s) => {
+    const r = await app.services.prices.ingestRaw(s, source, records);
+    await app.services.prices.refreshAggregates(s);
+    return r;
+  }),
+  failure: (source, error) => app.run((s) => app.services.prices.recordSourceFailure(s, source, error)),
+  tick: () => app.run((s) => app.services.maintenance.tick(s)),
+});
 
 // ---- outbox delivery (ADR-004) -------------------------------------------------------------
-export interface OutboxMessage { notificationId: string; to: string | null; locale: "en" | "ta"; channel: string; template: string; data: Record<string, unknown>; attempt: number }
 /** Provider seam: SMS / WhatsApp / push. `console` is for local development; real providers implement the same shape. */
 export interface MessageProvider { send(msg: OutboxMessage, body: string): Promise<void> }
 export const consoleProvider = (write: (line: string) => void = (l) => void process.stdout.write(l + "\n")): MessageProvider => ({
@@ -60,12 +52,10 @@ export interface OutboxClient {
   claim(limit: number): Promise<OutboxMessage[]>;
   ack(notificationId: string, ok: boolean, error?: string): Promise<void>;
 }
-export class HttpOutbox implements OutboxClient {
-  private sink: HttpSink;
-  constructor(sink: HttpSink) { this.sink = sink; }
-  async claim(limit: number) { return ((await this.sink.rawPost("outbox/claim", { limit })) as { items: OutboxMessage[] }).items; }
-  async ack(notificationId: string, ok: boolean, error = "") { await this.sink.rawPost("outbox/ack", { notificationId, ok, error }); }
-}
+export const appOutbox = (app: LiveCoco): OutboxClient => ({
+  claim: (limit) => app.run((s) => app.services.notifier.claim(s, limit)),
+  ack: async (notificationId, ok, error = "") => { await app.run((s) => app.services.notifier.ack(s, notificationId, ok, error)); },
+});
 
 export async function deliverOutbox(client: OutboxClient, providers: Record<string, MessageProvider>, render: (m: OutboxMessage) => string, limit = 20) {
   const result = { sent: 0, failed: 0 };

@@ -11,8 +11,27 @@ The API must not perform slow source polling or notification fan-out inside HTTP
 npm run dev        # http://localhost:4000, see docs/api/endpoints.md
 ```
 
-The API is a NestJS application ([ADR-009](../../docs/decisions/009-nextjs-nestjs-flutter.md)), run with `tsx`. `Platform` in `src/platform.ts` holds the application services. `src/server.ts` builds the Nest app; the controllers in `src/http/controllers` map the services to `/v1` routes, and `src/http/pipeline.ts` holds the shared request pipeline (validation, unit of work, service token, sessions, idempotency, problem responses and rate limiting). Route options are decorators from `src/http/route-kit.ts`: `@Public()`, `@Internal()`, `@Idempotent()`, `@Shape(...)`.
+The API is a NestJS application ([ADR-009](../../docs/decisions/009-nextjs-nestjs-flutter.md)), run with `tsx`.
+
+```text
+src/
+  app.ts            composition root: config, every service wired once, LiveCoco.run(fn) = one unit of work
+  server.ts         Nest bootstrap: global CoreModule (services by class token) + one module per feature
+  core/             cross-cutting services: Scope, audit log, work queues, outbox notifier, idempotency
+  http/             shared request pipeline (validation, unit of work, sessions, idempotency, problem responses,
+                    rate limiting) and route decorators: @Public(), @Idempotent(), @Shape(...), @Binary()
+  modules/
+    identity/       OTP sign-in, sessions, step-up, capabilities, organisations, verification claims, evidence
+    prices/         ingestion, normalisation, anomaly review, quotes, aggregation, price views; alerts
+    marketplace/    sell lots, buy requirements and matching, offers and threads, participants/reputation
+    deals/          deal cards, amendments, milestones, evidence, disputes
+    fulfilment/     inspection and logistics partners; FPO aggregation and settlements
+    media/          signed uploads, content scanning, authorised downloads
+    operations/     trust & safety, operator console; maintenance jobs run by the worker
+```
+
+Services are stateless. Every method takes a `Scope` (the unit of work, clock, correlation id and actor) as its first argument; controllers are thin adapters from routes to service calls.
 
 ## Persistence
 
-With `DATABASE_URL` set the API loads state from PostgreSQL, serves each request as one serialised unit of work and commits changed entities in a single transaction ([ADR-008](../../docs/decisions/008-document-store-unit-of-work.md)). Release D services live in `src/fulfilment.ts`; internal worker endpoints (`/v1/internal/*`) require `INTERNAL_API_TOKEN`.
+With `DATABASE_URL` set, each request is one Postgres transaction that locks the rows it reads (GET requests take no locks) and is retried automatically on conflicts. Any number of API and worker processes can share the database ([ADR-010](../../docs/decisions/010-stateless-services-row-locked-units-of-work.md)). Without it the API uses the in-memory store (development only).

@@ -15,9 +15,9 @@ Every job must be idempotent and observable. See [the price runbook](../../docs/
 ## Running
 
 ```text
-DATA_GOV_IN_API_KEY=... npm run dev:worker
+DATABASE_URL=... DATA_GOV_IN_API_KEY=... npm run dev:worker
 ```
 
 `src/agmarknet.ts` is the data.gov.in adapter; `src/jobs.ts` contains the idempotent ingest and maintenance (expiry, aggregation, alerts) jobs.
 
-Jobs: AGMARKNET ingest, maintenance tick (expiry, aggregates, alerts, media scan, retention purge) and outbox delivery through provider adapters (`SMS_PROVIDER=console` for development). The worker talks to the API only through `/v1/internal/*` with `INTERNAL_API_TOKEN`.
+Jobs: AGMARKNET ingest, maintenance tick (expiry, aggregates, alerts), housekeeping (media scan, retention purge) and outbox delivery through provider adapters (`SMS_PROVIDER=console` for development). The worker runs the API's services (`@livecoco/api`) directly against Postgres; run as many workers as you like ([ADR-010](../../docs/decisions/010-stateless-services-row-locked-units-of-work.md)).

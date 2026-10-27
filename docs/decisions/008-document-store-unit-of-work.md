@@ -1,6 +1,6 @@
 # ADR-008: PostgreSQL document tables with a per-request unit of work
 
-**Status:** Accepted  
+**Status:** Partly superseded by [ADR-010](./010-stateless-services-row-locked-units-of-work.md) (in-memory state, serialised requests and the writer lock). The document tables, generated columns, constraints and triggers still apply.  
 **Date:** 2026-10-01
 
 ## Context

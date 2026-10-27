@@ -11,8 +11,9 @@ Architecture Decision Records (ADRs) preserve why important choices were made.
 - [ADR-005: PWA before native mobile](./005-pwa-first.md) (superseded by ADR-009)
 - [ADR-006: No platform-held payments in MVP](./006-no-custodied-payments.md)
 - [ADR-007: SQLite persistence for the single-node pilot](./007-sqlite-pilot-persistence.md) (superseded by ADR-008)
-- [ADR-008: PostgreSQL document tables with a per-request unit of work](./008-document-store-unit-of-work.md)
+- [ADR-008: PostgreSQL document tables with a per-request unit of work](./008-document-store-unit-of-work.md) (in-memory single-writer part superseded by ADR-010)
 - [ADR-009: Next.js web, NestJS API and Flutter mobile](./009-nextjs-nestjs-flutter.md)
+- [ADR-010: Stateless services over row-locked units of work](./010-stateless-services-row-locked-units-of-work.md)
 
 ## Template
 
