@@ -1,5 +1,5 @@
-// Next.js configuration for the web tier. The app imports the monorepo's TypeScript packages directly
-// (`../../packages/*/src/*.ts`), so the build root is the repository root.
+// Next.js configuration for the web tier. The app imports the monorepo's TypeScript workspace packages
+// (`@livecoco/*`), so the build root is the repository root.
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,13 +9,14 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export default {
   poweredByHeader: false,
   reactStrictMode: true,
-  // `/app/` is the canonical app URL (manifest start_url, service worker shell); the proxy redirects `/app`.
-  skipTrailingSlashRedirect: true,
   turbopack: { root },
   outputFileTracingRoot: root,
-  experimental: { externalDir: true },
   transpilePackages: ["@livecoco/localization"],
+  async redirects() {
+    // The previous PWA lived at `/app/` with hash routes; installed copies and bookmarks still open it.
+    return [{ source: "/app", destination: "/", permanent: true }, { source: "/app/:path*", destination: "/", permanent: true }];
+  },
   async headers() {
-    return [{ source: "/:path*", headers: [{ key: "x-content-type-options", value: "nosniff" }] }];
+    return [{ source: "/:path*", headers: [{ key: "x-content-type-options", value: "nosniff" }, { key: "referrer-policy", value: "strict-origin-when-cross-origin" }] }];
   },
 };
