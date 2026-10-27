@@ -1,5 +1,5 @@
 import { Controller, Post } from "@nestjs/common";
-import { is } from "../../../../../packages/contracts/src/index.ts";
+import { is } from "@livecoco/contracts";
 import { C, Idempotent, Shape, created, money, type Ctx } from "../route-kit.ts";
 
 /** Approved price contributors: executable quotes and corrections. */

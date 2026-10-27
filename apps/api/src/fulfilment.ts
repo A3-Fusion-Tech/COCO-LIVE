@@ -1,8 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { DomainError, conflict, forbidden, invalid, notFound, addQuantity, compareQuantity, currentCard, estimateTotalPaise, toMilli, fromMilli, type Deal, type SellLot, type Unit } from "../../../packages/domain/src/index.ts";
-import type { TrackedMap } from "../../../packages/database/src/tracked.ts";
+import { DomainError, conflict, forbidden, invalid, notFound, addQuantity, compareQuantity, currentCard, estimateTotalPaise, toMilli, fromMilli, type Deal, type SellLot, type Unit } from "@livecoco/domain";
+import type { TrackedMap } from "@livecoco/database";
 import { uid } from "./ids.ts";
 import type { Platform, Session, User } from "./platform.ts";
 

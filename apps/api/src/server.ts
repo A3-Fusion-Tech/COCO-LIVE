@@ -3,7 +3,7 @@ import type { Server } from "node:http";
 import { Module, type DynamicModule } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import express from "express";
-import { createLogger, Metrics } from "../../../packages/observability/src/index.ts";
+import { createLogger, Metrics } from "@livecoco/observability";
 import { API_OPTIONS, type ApiOptions } from "./http/options.ts";
 import { LiveCocoAdapter, PlatformInterceptor, preRouting, ProblemFilter } from "./http/pipeline.ts";
 import { AlertsController } from "./http/controllers/alerts.controller.ts";

@@ -1,5 +1,5 @@
 import { Controller, Get, Post } from "@nestjs/common";
-import { is } from "../../../../../packages/contracts/src/index.ts";
+import { is } from "@livecoco/contracts";
 import { C, Idempotent, Shape, created, type Ctx } from "../route-kit.ts";
 
 /** Deal cards, amendments, fulfilment milestones, cancellation and disputes. */

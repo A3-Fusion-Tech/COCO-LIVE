@@ -1,5 +1,5 @@
 import { Controller, Get, Post } from "@nestjs/common";
-import { is } from "../../../../../packages/contracts/src/index.ts";
+import { is } from "@livecoco/contracts";
 import { C, Idempotent, Public, Shape, created, termsShape, type Ctx } from "../route-kit.ts";
 
 /** Offers, counter-offers and negotiation threads, including contact reveal, block and report. */

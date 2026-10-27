@@ -1,4 +1,4 @@
-import { formatDateTime, formatMoney, t, type Locale } from "../../../packages/localization/src/index.ts";
+import { formatDateTime, formatMoney, t, type Locale } from "@livecoco/localization";
 
 export interface PriceItem {
   kind: string;

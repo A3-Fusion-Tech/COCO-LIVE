@@ -1,5 +1,5 @@
-import type { Logger, Metrics } from "../../../../packages/observability/src/index.ts";
-import type { PgStore } from "../../../../packages/database/src/pg.ts";
+import type { Logger, Metrics } from "@livecoco/observability";
+import type { PgStore } from "@livecoco/database";
 import type { Platform } from "../platform.ts";
 
 export interface ApiOptions {

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { makeWorld } from "../packages/test-support/src/index.ts";
+import { makeWorld } from "@livecoco/test-support";
 
 const rec = (over: Record<string, unknown> = {}) => ({ state: "Tamil Nadu", district: "Coimbatore", market: "Pollachi", commodity: "Coconut", variety: "Other", grade: "FAQ", arrival_date: "01/10/2026", min_price: "2900", max_price: "3200", modal_price: "3050", price_unit: "Rs./Quintal", ...over });
 

@@ -1,6 +1,6 @@
 import { Controller, Get, Inject, Put, Req, Res } from "@nestjs/common";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { DomainError } from "../../../../../packages/domain/src/index.ts";
+import { DomainError } from "@livecoco/domain";
 import { API_OPTIONS, type ApiOptions } from "../options.ts";
 import { Binary } from "../route-kit.ts";
 

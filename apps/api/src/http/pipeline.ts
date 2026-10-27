@@ -4,10 +4,10 @@ import { Catch, NotFoundException, type ArgumentsHost, type CallHandler, type Ex
 import { Reflector } from "@nestjs/core";
 import { ExpressAdapter } from "@nestjs/platform-express";
 import { from, lastValueFrom, type Observable } from "rxjs";
-import { DomainError } from "../../../../packages/domain/src/index.ts";
-import { check, problem, type FieldError, type Shape } from "../../../../packages/contracts/src/index.ts";
-import { newCorrelationId, type Logger, type Metrics } from "../../../../packages/observability/src/index.ts";
-import { parseLocale, t, type Locale } from "../../../../packages/localization/src/index.ts";
+import { DomainError } from "@livecoco/domain";
+import { check, problem, type FieldError, type Shape } from "@livecoco/contracts";
+import { newCorrelationId, type Logger, type Metrics } from "@livecoco/observability";
+import { parseLocale, t, type Locale } from "@livecoco/localization";
 import type { Session, User } from "../platform.ts";
 import type { ApiOptions } from "./options.ts";
 import { ROUTE_META, type Ctx } from "./route-kit.ts";

@@ -7,20 +7,20 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "node --import tsx ./apps/api/src/main.ts",
-    "dev:worker": "node ./apps/worker/src/main.ts",
-    "dev:web": "next dev apps/web",
-    "build:web": "next build apps/web",
-    "start:web": "node ./apps/web/src/server.ts",
+    "dev": "npm start -w @livecoco/api",
+    "dev:worker": "npm start -w @livecoco/worker",
+    "dev:web": "npm run dev -w @livecoco/web",
+    "build:web": "npm run build -w @livecoco/web",
+    "start:web": "node --import tsx ./apps/web/src/server.ts",
     "build": "tsc -p tsconfig.check.json",
     "test": "node --import tsx --test --test-reporter=spec \"tests/**/*.test.ts\"",
     "lint": "node ./scripts/lint.mjs",
     "typecheck": "tsc -p tsconfig.check.json && tsc -p apps/web/tsconfig.json",
     "docs:check": "node ./scripts/check-doc-links.mjs && node --import tsx ./scripts/gen-endpoints.mjs --check",
-    "db:migrate": "node ./packages/database/src/cli.ts migrate",
-    "db:reset": "node ./packages/database/src/cli.ts reset",
+    "db:migrate": "node --import tsx ./packages/database/src/cli.ts migrate",
+    "db:reset": "node --import tsx ./packages/database/src/cli.ts reset",
     "test:e2e": "npm run build:web && node --import tsx ./tests/e2e/ui.e2e.mjs",
-    "seed": "node ./scripts/seed.mjs",
+    "seed": "node --import tsx ./scripts/seed.mjs",
     "docs:endpoints": "node --import tsx ./scripts/gen-endpoints.mjs"
   },
   "type": "module",
@@ -31,18 +31,14 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "tsx": "^4.23.15",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "@livecoco/test-support": "*"
   },
-  "dependencies": {
-    "@nestjs/common": "^11.2.7",
-    "@nestjs/core": "^11.2.7",
-    "@nestjs/platform-express": "^11.2.7",
-    "express": "^5.2.1",
-    "next": "^16.3.8",
-    "pg": "^8.13.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
-  }
+  "dependencies": {},
+  "workspaces": [
+    "packages/*",
+    "apps/api",
+    "apps/worker",
+    "apps/web"
+  ]
 }

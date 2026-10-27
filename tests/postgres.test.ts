@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { randomBytes } from "node:crypto";
-import { PgStore } from "../packages/database/src/pg.ts";
+import { PgStore } from "@livecoco/database";
 import { Platform } from "../apps/api/src/platform.ts";
 import { createApp } from "../apps/api/src/server.ts";
-import { FakeClock, OPS_CAPS, hoursFromNow, sampleTerms } from "../packages/test-support/src/index.ts";
+import { FakeClock, OPS_CAPS, hoursFromNow, sampleTerms } from "@livecoco/test-support";
 
 const URL_ = process.env.DATABASE_URL;
 const skip = URL_ ? false : "DATABASE_URL not set (start Postgres with `docker compose up -d db`)";

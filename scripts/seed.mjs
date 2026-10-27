@@ -1,7 +1,7 @@
 // Seeds a LOCAL database with synthetic development actors (never real data).
 // The canonical catalog lives in code (packages/domain/src/catalog.ts); no catalog rows are needed.
 import { Platform } from "../apps/api/src/platform.ts";
-import { PgStore } from "../packages/database/src/pg.ts";
+import { PgStore } from "@livecoco/database";
 
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_URL is required");

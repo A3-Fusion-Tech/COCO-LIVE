@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { aggregate, bucketKey, detectAnomalies, estimateTotalPaise, freshness, inr, transitionObservation, validateObservation, toMilli, addQuantity, subtractQuantity, observationWeight, type PriceObservation } from "../packages/domain/src/index.ts";
-import { missingKeys, formatMoney, t, parseLocale } from "../packages/localization/src/index.ts";
-import { redact } from "../packages/observability/src/index.ts";
+import { aggregate, bucketKey, detectAnomalies, estimateTotalPaise, freshness, inr, transitionObservation, validateObservation, toMilli, addQuantity, subtractQuantity, observationWeight, type PriceObservation } from "@livecoco/domain";
+import { missingKeys, formatMoney, t, parseLocale } from "@livecoco/localization";
+import { redact } from "@livecoco/observability";
 
 const now = new Date("2026-10-01T06:00:00Z");
 let n = 0;

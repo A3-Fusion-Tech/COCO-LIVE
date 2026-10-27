@@ -1,8 +1,8 @@
 import { Platform, type Capability } from "./platform.ts";
 import { FsBlobStore } from "./fulfilment.ts";
 import { createApp } from "./server.ts";
-import { PgStore } from "../../../packages/database/src/pg.ts";
-import { createLogger } from "../../../packages/observability/src/index.ts";
+import { PgStore } from "@livecoco/database";
+import { createLogger } from "@livecoco/observability";
 
 const logger = createLogger();
 const port = Number(process.env.PORT ?? 4000);

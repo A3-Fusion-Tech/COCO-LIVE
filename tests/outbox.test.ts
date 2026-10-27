@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { hoursFromNow, makeWorld, sampleTerms } from "../packages/test-support/src/index.ts";
+import { hoursFromNow, makeWorld, sampleTerms } from "@livecoco/test-support";
 import { deliverOutbox, consoleProvider, disabledProvider, type OutboxClient } from "../apps/worker/src/jobs.ts";
-import { renderNotification } from "../packages/localization/src/index.ts";
+import { renderNotification } from "@livecoco/localization";
 
 function client(w: ReturnType<typeof makeWorld>): OutboxClient {
   return { claim: async (n) => w.p.claimOutbox(n) as never, ack: async (id, ok, e) => void w.p.ackOutbox(id, ok, e) };

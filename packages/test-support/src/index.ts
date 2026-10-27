@@ -1,5 +1,5 @@
 import { Platform, type Config, type Session, type User } from "../../../apps/api/src/platform.ts";
-import type { OfferTerms } from "../../../packages/domain/src/index.ts";
+import type { OfferTerms } from "@livecoco/domain";
 
 export class FakeClock {
   private t = Date.parse("2026-10-01T06:00:00Z");

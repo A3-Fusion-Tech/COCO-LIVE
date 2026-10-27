@@ -1,6 +1,6 @@
 import { Controller, Get } from "@nestjs/common";
-import { MARKETS, PRODUCTS } from "../../../../../packages/domain/src/index.ts";
-import { paginate } from "../../../../../packages/contracts/src/index.ts";
+import { MARKETS, PRODUCTS } from "@livecoco/domain";
+import { paginate } from "@livecoco/contracts";
 import { C, Public, type Ctx } from "../route-kit.ts";
 
 /** Public price board: products, markets, latest and historical prices, bulletins and the anonymised price evidence. */

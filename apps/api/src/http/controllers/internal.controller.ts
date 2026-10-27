@@ -1,5 +1,5 @@
 import { Controller, Post } from "@nestjs/common";
-import { is } from "../../../../../packages/contracts/src/index.ts";
+import { is } from "@livecoco/contracts";
 import { C, Internal, Shape, type Ctx } from "../route-kit.ts";
 
 /** Worker-only endpoints (ingestion, outbox delivery, maintenance tick), authenticated by the service token. */

@@ -1,5 +1,5 @@
 import { Controller, Get, Patch, Post } from "@nestjs/common";
-import { is } from "../../../../../packages/contracts/src/index.ts";
+import { is } from "@livecoco/contracts";
 import { C, Idempotent, Shape, alertShape, created, type Ctx } from "../route-kit.ts";
 
 /** Price alerts with explicit channel consent. */

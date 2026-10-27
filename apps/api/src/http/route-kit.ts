@@ -1,6 +1,6 @@
 import { SetMetadata, createParamDecorator, type ExecutionContext } from "@nestjs/common";
-import { is, type Shape as ShapeSpec } from "../../../../packages/contracts/src/index.ts";
-import type { Locale } from "../../../../packages/localization/src/index.ts";
+import { is, type Shape as ShapeSpec } from "@livecoco/contracts";
+import type { Locale } from "@livecoco/localization";
 import type { Platform, Session, User } from "../platform.ts";
 
 /** Everything a route handler needs, assembled by the request pipeline inside the unit of work. */

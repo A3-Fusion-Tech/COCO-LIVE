@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
-import { hoursFromNow, makeWorld, sampleTerms } from "../packages/test-support/src/index.ts";
+import { hoursFromNow, makeWorld, sampleTerms } from "@livecoco/test-support";
 import { apportion } from "../apps/api/src/fulfilment.ts";
 import { createApp } from "../apps/api/src/server.ts";
 

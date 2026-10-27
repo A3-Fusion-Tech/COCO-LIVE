@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
-import { makeWorld } from "../packages/test-support/src/index.ts";
+import { makeWorld } from "@livecoco/test-support";
 import { createApp } from "../apps/api/src/server.ts";
 import { gatewayConfig, health, logout, manifest, pricePage, proxyApi, serviceWorker, verifySession, type GatewayConfig } from "../apps/web/src/gateway.ts";
 import { renderPricesPage } from "../apps/web/src/render.ts";

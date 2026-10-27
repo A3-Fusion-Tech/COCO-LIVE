@@ -1,7 +1,7 @@
 import { AgmarknetAdapter } from "./agmarknet.ts";
 import { HttpOutbox, HttpSink, consoleProvider, deliverOutbox, disabledProvider, runAgmarknetIngest, type MessageProvider } from "./jobs.ts";
-import { renderNotification } from "../../../packages/localization/src/index.ts";
-import { createLogger } from "../../../packages/observability/src/index.ts";
+import { renderNotification } from "@livecoco/localization";
+import { createLogger } from "@livecoco/observability";
 
 const log = createLogger();
 const token = process.env.INTERNAL_API_TOKEN;

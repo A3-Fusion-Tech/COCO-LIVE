@@ -1,6 +1,6 @@
 import { Controller, Get, Post } from "@nestjs/common";
-import { DomainError } from "../../../../../packages/domain/src/index.ts";
-import { is } from "../../../../../packages/contracts/src/index.ts";
+import { DomainError } from "@livecoco/domain";
+import { is } from "@livecoco/contracts";
 import { C, Idempotent, Shape, created, raw, type Ctx } from "../route-kit.ts";
 
 /** Release D: partners, inspections, logistics quotes, FPO aggregation, settlements and media upload intents. */

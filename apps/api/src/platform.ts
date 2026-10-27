@@ -1,6 +1,6 @@
 import { uid as mkId } from "./ids.ts";
 import { Fulfilment } from "./fulfilment.ts";
-import { TrackedMap } from "../../../packages/database/src/tracked.ts";
+import { TrackedMap } from "@livecoco/database";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   DomainError, conflict, forbidden, invalid, notFound,
@@ -14,7 +14,7 @@ import {
   type DisputeOutcome, type DisputeReason, type MatchCandidate, type MspReference, type Offer, type OfferTerms,
   type ParticipantState, type PriceObservation, type RecurrenceTemplate, type ReputationEvent, type SellLot, type SourceClass,
   type MarketStage, type ProductId, type TradeTerm, type Unit, type Cadence, type FulfilmentTerm, type ObservationState,
-} from "../../../packages/domain/src/index.ts";
+} from "@livecoco/domain";
 
 export type Capability =
   | "price.contribute" | "ops.price_review" | "ops.source_health" | "ops.verification" | "ops.listings" | "ops.disputes" | "ops.audit" | "ops.sensitive_documents";

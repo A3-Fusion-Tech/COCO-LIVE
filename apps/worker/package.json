@@ -1,0 +1,13 @@
+{
+  "name": "@livecoco/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node --import tsx ./src/main.ts" },
+  "dependencies": {
+    "@livecoco/api": "*",
+    "@livecoco/database": "*",
+    "@livecoco/localization": "*",
+    "@livecoco/observability": "*"
+  }
+}

@@ -1,4 +1,4 @@
-import { parseLocale } from "../../../packages/localization/src/index.ts";
+import { parseLocale } from "@livecoco/localization";
 import { renderPricesPage, type PriceItem } from "./render.ts";
 
 /**

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { hoursFromNow, makeWorld, sampleTerms } from "../packages/test-support/src/index.ts";
-import { reputationSummary } from "../packages/domain/src/index.ts";
+import { hoursFromNow, makeWorld, sampleTerms } from "@livecoco/test-support";
+import { reputationSummary } from "@livecoco/domain";
 
 function setup() {
   const w = makeWorld();

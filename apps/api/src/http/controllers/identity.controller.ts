@@ -1,5 +1,5 @@
 import { Controller, Get, Patch, Post } from "@nestjs/common";
-import { is } from "../../../../../packages/contracts/src/index.ts";
+import { is } from "@livecoco/contracts";
 import { C, Idempotent, Public, Shape, created, type Ctx } from "../route-kit.ts";
 
 /** Phone OTP sign-in, sessions, step-up, profile, organisations and verification claims. */

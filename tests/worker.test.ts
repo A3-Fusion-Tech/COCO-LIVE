@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { AgmarknetAdapter, type FetchLike } from "../apps/worker/src/agmarknet.ts";
 import { HttpSink, runAgmarknetIngest } from "../apps/worker/src/jobs.ts";
-import { localSink, makeWorld } from "../packages/test-support/src/index.ts";
+import { localSink, makeWorld } from "@livecoco/test-support";
 
 const row = (market: string, commodity = "Coconut") => ({ state: "Tamil Nadu", district: "Coimbatore", market, commodity, variety: "Other", grade: "FAQ", arrival_date: "01/10/2026", min_price: "2900", max_price: "3200", modal_price: "3050", price_unit: "Rs./Quintal" });
 

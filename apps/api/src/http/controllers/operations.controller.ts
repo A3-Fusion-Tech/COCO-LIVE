@@ -1,6 +1,6 @@
 import { Controller, Get, Post } from "@nestjs/common";
-import { DomainError } from "../../../../../packages/domain/src/index.ts";
-import { is } from "../../../../../packages/contracts/src/index.ts";
+import { DomainError } from "@livecoco/domain";
+import { is } from "@livecoco/contracts";
 import { C, Shape, type Ctx } from "../route-kit.ts";
 
 /** Operator console: review queues, source health, audit, claims, listings and disputes (capability + step-up enforced in the platform). */

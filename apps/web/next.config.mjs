@@ -14,6 +14,7 @@ export default {
   turbopack: { root },
   outputFileTracingRoot: root,
   experimental: { externalDir: true },
+  transpilePackages: ["@livecoco/localization"],
   async headers() {
     return [{ source: "/:path*", headers: [{ key: "x-content-type-options", value: "nosniff" }] }];
   },

@@ -1,5 +1,5 @@
 import { Controller, Get, Patch, Post } from "@nestjs/common";
-import { is } from "../../../../../packages/contracts/src/index.ts";
+import { is } from "@livecoco/contracts";
 import { C, Idempotent, Shape, created, type Ctx } from "../route-kit.ts";
 
 /** Seller lots: create, edit, photos, activate, pause and the buyer-facing market. */
