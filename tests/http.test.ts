@@ -1,14 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
-import { makeWorld } from "../packages/test-support/src/index.ts";
-import { createApp } from "../apps/api/src/server.ts";
-import { gatewayConfig, health, logout, manifest, pricePage, proxyApi, serviceWorker, verifySession, type GatewayConfig } from "../apps/web/src/gateway.ts";
-import { renderPricesPage } from "../apps/web/src/render.ts";
+import { createApp } from "@livecoco/api";
+import { makeWorld } from "@livecoco/test-support";
 
 async function boot(limit = 1000) {
   const w = makeWorld();
-  const srv = await createApp({ platform: w.p, requestsPerMinute: limit });
+  const srv = await createApp({ app: w.app, requestsPerMinute: limit });
   await new Promise<void>((r) => srv.listen(0, r));
   const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
   const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
@@ -70,7 +68,7 @@ test("OTP limits are per phone; users sharing one network address are not locked
 test("idempotency: same key replays, different payload conflicts, missing key rejected", async () => {
   const { w, call, close } = await boot();
   try {
-    const u = w.login("9300000003");
+    const u = await w.login("9300000003");
     const h = { authorization: `Bearer ${u.token}` };
     const body = { name: "Pollachi FPO", kind: "FPO" };
     assert.equal((await call("POST", "/v1/organizations", body, h)).status, 400);
@@ -78,7 +76,7 @@ test("idempotency: same key replays, different payload conflicts, missing key re
     const b = await call("POST", "/v1/organizations", body, { ...h, "idempotency-key": "k1" });
     assert.equal(a.status, 201);
     assert.deepEqual(a.json, b.json);
-    assert.equal(w.p.orgs.size, 1);
+    assert.equal((await w.find("organizations")).length, 1);
     const c = await call("POST", "/v1/organizations", { ...body, name: "Other" }, { ...h, "idempotency-key": "k1" });
     assert.equal(c.status, 409);
     assert.equal(c.json.code, "IDEMPOTENCY_KEY_REUSED");
@@ -88,7 +86,7 @@ test("idempotency: same key replays, different payload conflicts, missing key re
 test("public prices endpoint, malformed bodies, payload limits and operator step-up over HTTP", async () => {
   const { w, call, close, base } = await boot();
   try {
-    w.p.ingestRaw("agmarknet", [{ state: "Tamil Nadu", market: "Pollachi", commodity: "Coconut", grade: "FAQ", arrival_date: "01/10/2026", min_price: "2900", max_price: "3200", modal_price: "3050", price_unit: "Rs./Quintal" }]);
+    await w.sys.prices.ingestRaw("agmarknet", [{ state: "Tamil Nadu", market: "Pollachi", commodity: "Coconut", grade: "FAQ", arrival_date: "01/10/2026", min_price: "2900", max_price: "3200", modal_price: "3050", price_unit: "Rs./Quintal" }]);
     const prices = await call("GET", "/v1/prices/latest");
     assert.equal(prices.status, 200);
     assert.equal(prices.json.items[0].kind, "OFFICIAL_OBSERVATION_ONLY");
@@ -99,15 +97,15 @@ test("public prices endpoint, malformed bodies, payload limits and operator step
     assert.equal(raw.status, 400);
     const big = await fetch(base + "/v1/auth/otp/request", { method: "POST", body: JSON.stringify({ phone: "9".repeat(400_000) }) }).catch(() => ({ status: 413 }));
     assert.ok([413].includes(big.status) || big.status === 400);
-    const op = w.login("+919000000001");
+    const op = await w.login("+919000000001");
     const h = { authorization: `Bearer ${op.token}` };
     const blocked = await call("GET", "/v1/ops/queues", undefined, h);
     assert.equal(blocked.status, 403);
     assert.equal(blocked.json.code, "STEP_UP_REQUIRED");
-    w.p.requestOtp("+919000000001", "x");
+    await w.sys.identity.requestOtp("+919000000001", "x");
     assert.equal((await call("POST", "/v1/auth/step-up", { code: w.otps.get("+919000000001") }, h)).status, 200);
     assert.equal((await call("GET", "/v1/ops/queues", undefined, h)).status, 200);
-    const normal = w.login("9300000005");
+    const normal = await w.login("9300000005");
     assert.equal((await call("GET", "/v1/ops/audit", undefined, { authorization: `Bearer ${normal.token}` })).status, 403);
   } finally { close(); }
 });
@@ -115,8 +113,8 @@ test("public prices endpoint, malformed bodies, payload limits and operator step
 test("full marketplace flow over HTTP", async () => {
   const { w, call, close } = await boot();
   try {
-    const seller = w.login("9400000001"), buyer = w.login("9400000002");
-    w.verify(seller.user, "PERSON_IDENTITY"); w.verify(buyer.user, "PERSON_IDENTITY");
+    const seller = await w.login("9400000001"), buyer = await w.login("9400000002");
+    await w.verify(seller, "PERSON_IDENTITY"); await w.verify(buyer, "PERSON_IDENTITY");
     const hs = { authorization: `Bearer ${seller.token}` }, hb = { authorization: `Bearer ${buyer.token}` };
     const exp = (h: number) => new Date(w.clock.now().getTime() + h * 3_600_000).toISOString();
     const lot = await call("POST", "/v1/sell-lots", { productId: "prod_mature_coconut", gradeAttributes: { husk: "WITH_HUSK" }, gradeGroup: "FAQ", unit: "NUT", quantityTotal: "5000", partialFulfilmentAllowed: false, originMarketId: "market_pollachi", availableFrom: exp(1), availableTo: exp(48), expiresAt: exp(72), fulfilment: { mode: "PICKUP", costsIncluded: ["LOADING"], costsExcluded: [] }, priceExpectation: { inviteOffers: true } }, { ...hs, "idempotency-key": "lot1" });
@@ -141,7 +139,7 @@ test("full marketplace flow over HTTP", async () => {
     const race = await call("POST", `/v1/offers/${offer.json.offerId}/accept`, {}, { ...hs, "idempotency-key": "acc2" });
     assert.equal(race.status, 409);
     assert.equal((await call("GET", `/v1/deals/${deal.json.dealId}`, undefined, hb)).json.cards.length, 1);
-    const stranger = w.login("9400000003");
+    const stranger = await w.login("9400000003");
     assert.equal((await call("GET", `/v1/deals/${deal.json.dealId}`, undefined, { authorization: `Bearer ${stranger.token}` })).status, 404);
     for (const [path, h] of [["delivery", hs], ["accept", hb]] as const) assert.equal((await call("POST", `/v1/deals/${deal.json.dealId}/${path}`, {}, { ...h, "idempotency-key": path })).status, 200);
     assert.equal((await call("POST", `/v1/deals/${deal.json.dealId}/payment`, { method: "UPI" }, { ...hs, "idempotency-key": "pay" })).json.status, "PAYMENT_CONFIRMED");
@@ -149,69 +147,24 @@ test("full marketplace flow over HTTP", async () => {
   } finally { close(); }
 });
 
-test("web renders Tamil/English price pages with freshness, disclaimers and MSP separation", async () => {
-  const { w, base, close } = await boot();
-  const cfg: GatewayConfig = { apiBaseUrl: base, secureCookies: false };
-  const page = async (path: string, headers: Record<string, string> = {}) => pricePage(new Request(`http://web${path}`, { headers }), cfg);
+test("there are no internal HTTP endpoints: the worker works on the database directly", async () => {
+  const { w, call, close } = await boot();
   try {
-    w.p.ingestRaw("agmarknet", [{ state: "Tamil Nadu", market: "Pollachi", commodity: "Coconut", grade: "FAQ", arrival_date: "01/10/2026", min_price: "2900", max_price: "3200", modal_price: "3050", price_unit: "Rs./Quintal" }]);
-    const enRes = await page("/?lang=en");
-    assert.equal(enRes.headers.get("cache-control"), "public, max-age=60");
-    const en = await enRes.text();
-    assert.match(en, /lang="en"/);
-    assert.match(en, /not guaranteed offers/);
-    assert.match(en, /Reported at/);
-    assert.match(en, /Minimum Support Price is a policy reference/);
-    const ta = await (await page("/", { "accept-language": "ta-IN" })).text();
-    assert.match(ta, /lang="ta"/);
-    assert.match(ta, /பொள்ளாச்சி/);
-    assert.match(ta, /உத்தரவாதமான/);
-    w.clock.advanceHours(24 * 10);
-    const stale = await (await page("/?lang=en")).text();
-    assert.match(stale, /Last reported for/);
-    assert.match(stale, /Stale/);
-    const mf = manifest(new Request("http://web/manifest.webmanifest?lang=ta"));
-    assert.equal(mf.headers.get("content-type"), "application/manifest+json");
-    assert.equal(((await mf.json()) as { lang: string }).lang, "ta");
-    assert.match(await serviceWorker().text(), /caches\.match/);
-    assert.equal(health().status, 200);
-    assert.match(renderPricesPage([], [], "en"), /No current verified range/);
+    const user = await w.login("9500000001");
+    for (const path of ["/v1/internal/tick", "/v1/internal/ingest", "/v1/internal/outbox/claim"]) {
+      assert.equal((await call("POST", path, {}, { authorization: `Bearer ${user.token}`, "x-internal-token": "anything" })).status, 404);
+    }
   } finally { close(); }
-  const down = await pricePage(new Request("http://web/"), { apiBaseUrl: "http://127.0.0.1:1", secureCookies: false });
-  assert.equal(down.status, 503);
-  assert.equal(await down.text(), "Prices temporarily unavailable");
 });
 
-test("web gateway keeps the session in an HttpOnly cookie, blocks cross-site mutations and hides internal routes", async () => {
-  const { w, base, close } = await boot();
-  const cfg: GatewayConfig = { apiBaseUrl: base, secureCookies: true };
-  const req = (method: string, path: string, init: { body?: string | Uint8Array; headers?: Record<string, string> } = {}) =>
-    new Request(`http://web${path}`, { method, headers: { "x-forwarded-for": "203.0.113.9", ...init.headers }, ...(init.body !== undefined ? { body: init.body } : {}) });
+test("concurrent requests from one user do not lose each other's writes", async () => {
+  const { w, call, close } = await boot();
   try {
-    assert.equal((await verifySession(req("POST", "/session/verify", { body: "{}" }), cfg)).status, 403, "verify needs x-requested-with");
-    await fetch(`${base}/v1/auth/otp/request`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: "9300000009" }) });
-    const ok = await verifySession(req("POST", "/session/verify", { body: JSON.stringify({ phone: "9300000009", code: w.otps.get("+919300000009") }), headers: { "x-requested-with": "t", "content-type": "application/json" } }), cfg);
-    assert.equal(ok.status, 200);
-    const setCookie = ok.headers.get("set-cookie") ?? "";
-    assert.match(setCookie, /^lc_session=[^;]+; HttpOnly; SameSite=Strict; Path=\/; Max-Age=2592000; Secure$/);
-    const body = (await ok.json()) as Record<string, unknown>;
-    assert.ok(body.user && !("token" in body), "the token is never returned to JavaScript");
-    const session = setCookie.split(";")[0] as string;
-    const me = await proxyApi(req("GET", "/v1/me?lang=en", { headers: { cookie: session } }), cfg);
-    assert.equal(me.status, 200);
-    assert.equal(me.headers.get("set-cookie"), null);
-    assert.equal((await proxyApi(req("POST", "/v1/alerts", { body: "{}", headers: { cookie: session, "content-type": "application/json" } }), cfg)).status, 403, "mutations need x-requested-with");
-    assert.equal((await proxyApi(req("POST", "/v1/internal/tick", { body: "{}", headers: { "x-requested-with": "t" } }), cfg)).status, 404);
-    assert.equal((await proxyApi(req("GET", "/v1/internal/tick"), cfg)).status, 404);
-    const unsigned = await proxyApi(req("PUT", "/v1/uploads/nope?sig=x", { body: new Uint8Array([1, 2, 3]), headers: { "content-type": "image/png" } }), cfg);
-    assert.notEqual(unsigned.status, 403, "signed upload PUTs pass the CSRF check and are judged by the API's signature");
-    const out = logout(req("POST", "/session/logout", { headers: { "x-requested-with": "t" } }));
-    assert.match(out.headers.get("set-cookie") ?? "", /^lc_session=; .*Max-Age=0/);
-    assert.equal(logout(req("POST", "/session/logout")).status, 403);
-    const down = await proxyApi(req("GET", "/v1/prices/latest"), { apiBaseUrl: "http://127.0.0.1:1", secureCookies: false });
-    assert.equal(down.status, 503);
-    assert.equal(gatewayConfig({ NODE_ENV: "production" }).secureCookies, true);
-    assert.equal(gatewayConfig({ NODE_ENV: "production", COOKIE_SECURE: "0" }).secureCookies, false);
-    assert.equal(gatewayConfig({ API_BASE_URL: "http://api:4000/" }).apiBaseUrl, "http://api:4000");
+    const u = await w.login("9500000002");
+    const h = { authorization: `Bearer ${u.token}` };
+    const results = await Promise.all(Array.from({ length: 10 }, (_, i) => call("POST", "/v1/organizations", { name: `Org ${i}`, kind: i % 2 ? "FPO" : "NOT_A_KIND" }, { ...h, "idempotency-key": `org-${i}` })));
+    assert.deepEqual(results.map((r) => r.status).sort(), [...Array(5).fill(201), ...Array(5).fill(422)].sort());
+    assert.equal((await w.find("organizations")).length, 5);
+    assert.equal((await call("GET", "/v1/me/organizations", undefined, h)).json.items.length, 5, "every successful request's membership survived the others");
   } finally { close(); }
 });

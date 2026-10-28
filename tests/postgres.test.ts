@@ -2,115 +2,177 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { randomBytes } from "node:crypto";
-import { PgStore } from "../packages/database/src/pg.ts";
-import { Platform } from "../apps/api/src/platform.ts";
-import { createApp } from "../apps/api/src/server.ts";
-import { FakeClock, OPS_CAPS, hoursFromNow, sampleTerms } from "../packages/test-support/src/index.ts";
+import { createApp } from "@livecoco/api";
+import { PgStore } from "@livecoco/database";
+import { hoursFromNow, makeWorld, sampleTerms, type Login, type World } from "@livecoco/test-support";
 
 const URL_ = process.env.DATABASE_URL;
 const skip = URL_ ? false : "DATABASE_URL not set (start Postgres with `docker compose up -d db`)";
 
-/** A fully isolated schema per test; torn down afterwards. */
+const lotInput = (w: World, over: Record<string, unknown> = {}) => ({
+  productId: "prod_mature_coconut" as const, gradeAttributes: { husk: "WITH_HUSK" }, gradeGroup: "FAQ", unit: "NUT" as const, quantityTotal: "10000", partialFulfilmentAllowed: true,
+  originMarketId: "market_anaimalai", availableFrom: "2026-10-02T04:00:00Z", availableTo: "2026-10-06T04:00:00Z", expiresAt: hoursFromNow(w.clock, 72),
+  fulfilment: { mode: "PICKUP" as const, costsIncluded: ["LOADING"], costsExcluded: [] }, priceExpectation: { unitPricePaise: 3000 }, photoCount: 1, ...over,
+});
+
+/**
+ * A fully isolated schema per test. `w` is one "process"; `process()` starts another LiveCoco process with its own
+ * connection pool on the same database, which is how several API and worker processes run in production.
+ */
 async function boot() {
   const schema = `t_${randomBytes(6).toString("hex")}`;
-  const clock = new FakeClock();
-  const otps = new Map<string, string>();
-  const mk = () => new Platform({ clock: clock.now, deliverOtp: (p, c) => otps.set(p, c), operators: { "+919000000001": [...OPS_CAPS], "+919000000002": [...OPS_CAPS] } });
-  const store = new PgStore({ connectionString: URL_ as string, schema });
+  const stores: PgStore[] = [];
+  const pg = () => { const s = new PgStore({ connectionString: URL_ as string, schema }); stores.push(s); return s; };
+  const store = pg();
   await store.migrate();
-  await store.acquireWriterLock();
-  const p = mk();
-  await store.load(p);
-  const tx = <T>(fn: () => T) => store.withTransaction(p, fn);
-  const login = (phone: string, device = "d") => tx(() => { p.requestOtp(phone, device + phone); const { token, user } = p.verifyOtp(phone, otps.get(phone.startsWith("+") ? phone : `+91${phone}`) as string, device + phone); return { token, user, session: p.authenticate(token).session }; });
-  const cleanup = async () => { await store.pool.query(`drop schema ${schema} cascade`).catch(() => {}); await store.close(); };
-  /** Simulate a process restart: new store + platform over the same schema. */
-  const restart = async () => {
-    await store.close();
-    const s2 = new PgStore({ connectionString: URL_ as string, schema });
-    await s2.migrate(); await s2.acquireWriterLock();
-    const p2 = mk();
-    await s2.load(p2);
-    return { s2, p2 };
+  const w = makeWorld({}, store);
+  const q = (sql: string, params: unknown[] = []) => store.pool.query(sql, params);
+  /** Another process sharing the clock, OTP inbox and database. */
+  const process = () => {
+    const other = makeWorld({ clock: w.clock.now, deliverOtp: (p, c) => w.otps.set(p, c) }, pg());
+    return other;
   };
-  return { schema, clock, otps, store, p, tx, login, cleanup, restart, mk };
+  const cleanup = async () => { await q(`drop schema ${schema} cascade`).catch(() => {}); for (const s of stores) await s.close().catch(() => {}); };
+  return { schema, store, w, q, process, cleanup };
 }
 
+async function verified(w: World, ...who: Login[]) { for (const x of who) await w.verify(x, "PERSON_IDENTITY"); }
+
 test("migrations are idempotent and checksummed", { skip }, async () => {
-  const w = await boot();
+  const t = await boot();
   try {
-    assert.deepEqual(await w.store.migrate(), []);
-    const rows = (await w.store.pool.query("select name from schema_migrations")).rows;
-    assert.deepEqual(rows.map((r) => r.name).sort(), ["001_init.sql", "002_release_d.sql", "003_outbox.sql"]);
-    await w.store.pool.query("update schema_migrations set checksum = 'tampered'");
-    await assert.rejects(() => w.store.migrate(), /modified after being applied/);
-  } finally { await w.cleanup(); }
+    assert.deepEqual(await t.store.migrate(), []);
+    const rows = (await t.q("select name from schema_migrations")).rows;
+    assert.deepEqual(rows.map((r) => r.name).sort(), ["001_init.sql", "002_release_d.sql", "003_outbox.sql", "004_unit_of_work.sql", "005_price_history_documents.sql"]);
+    await t.q("update schema_migrations set checksum = 'tampered'");
+    await assert.rejects(() => t.store.migrate(), /modified after being applied/);
+  } finally { await t.cleanup(); }
 });
 
-test("state survives a restart: users, sessions, lots, deals, audit", { skip }, async () => {
-  const w = await boot();
-  let cleanup = w.cleanup;
+test("state is in the database, not the process: a second process sees and continues everything", { skip }, async () => {
+  const t = await boot();
   try {
+    const { w } = t;
     const seller = await w.login("9600000001"), buyer = await w.login("9600000002");
-    const ops = await w.login("+919000000001");
-    await w.tx(() => {
-      for (const u of [seller.user, buyer.user]) { const c = w.p.submitClaim(u, "PERSON_IDENTITY", {}, ["doc"]); w.p.require(ops.user, (ops.session.stepUpUntil = Date.now() + 1e9, ops.session), "ops.verification"); w.p.decideClaim(ops.user, ops.session, c.claimId, "APPROVED", "OK"); }
-    });
-    const lot = await w.tx(() => { const l = w.p.createLot(seller.user, { productId: "prod_mature_coconut", gradeAttributes: { husk: "WITH_HUSK" }, gradeGroup: "FAQ", unit: "NUT", quantityTotal: "10000", partialFulfilmentAllowed: true, originMarketId: "market_anaimalai", availableFrom: "2026-10-02T04:00:00Z", availableTo: "2026-10-06T04:00:00Z", expiresAt: hoursFromNow(w.clock, 72), fulfilment: { mode: "PICKUP", costsIncluded: ["LOADING"], costsExcluded: [] }, priceExpectation: { unitPricePaise: 3000 } }); w.p.addLotPhoto(seller.user, l.sellLotId); return w.p.activateLot(seller.user, l.sellLotId); });
-    const offer = await w.tx(() => w.p.createOffer(buyer.user, { sellLotId: lot.sellLotId, terms: sampleTerms({ quantity: "4000" }), expiresAt: hoursFromNow(w.clock, 6) }));
-    const deal = await w.tx(() => w.p.acceptOffer(seller.user, offer.offerId));
+    await verified(w, seller, buyer);
+    const lot = await w.as(seller).lots.activate((await w.as(seller).lots.create(lotInput(w))).sellLotId);
+    const offer = await w.as(buyer).offers.create({ sellLotId: lot.sellLotId, terms: sampleTerms({ quantity: "4000" }), expiresAt: hoursFromNow(w.clock, 6) });
+    const deal = await w.as(seller).offers.accept(offer.offerId);
 
-    const { s2, p2 } = await w.restart();
-    cleanup = async () => { await s2.pool.query(`drop schema ${w.schema} cascade`); await s2.close(); };
-    assert.equal(p2.lots.get(lot.sellLotId)!.quantityReserved, "4000");
-    assert.equal(p2.deals.get(deal.dealId)!.status, "AGREED");
-    assert.equal(p2.deals.get(deal.dealId)!.cards.length, 1);
-    assert.ok(Object.isFrozen(p2.deals.get(deal.dealId)!.cards[0]), "immutable history is re-frozen after load");
-    assert.equal(p2.authenticate(seller.token).user.userId, seller.user.userId, "sessions survive restarts");
-    assert.equal(p2.phoneIndex.get("+919600000001"), seller.user.userId);
-    assert.ok(p2.audit.some((a) => a.action === "OFFER_ACCEPTED"));
-    assert.equal(p2.audit.length, w.p.audit.length);
-    // and the new process can keep working
-    await s2.withTransaction(p2, () => p2.confirmDelivery(p2.users.get(seller.user.userId)!, deal.dealId));
-    assert.equal((await s2.pool.query("select status from deals")).rows[0].status, "DELIVERED");
-  } finally { await cleanup(); }
+    const p2 = t.process();
+    assert.equal((await p2.get<{ quantityReserved: string }>("sell_lots", lot.sellLotId))!.quantityReserved, "4000");
+    const seen = await p2.as(seller).deals.view(deal.dealId);
+    assert.equal(seen.status, "AGREED");
+    assert.ok(Object.isFrozen(seen.cards[0]), "immutable history is frozen when loaded");
+    assert.equal((await p2.as(seller).identity.me()).userId, seller.user.userId, "sessions are shared by every process");
+    assert.ok((await p2.log<{ action: string }>("audit_log")).some((a) => a.action === "OFFER_ACCEPTED"));
+    await p2.as(seller).deals.confirmDelivery(deal.dealId);
+    assert.equal((await t.q("select status from deals")).rows[0].status, "DELIVERED");
+    assert.equal((await w.as(buyer).deals.view(deal.dealId)).status, "DELIVERED", "and the first process sees the second's write");
+  } finally { await t.cleanup(); }
 });
 
-test("a failing request rolls memory back to the committed state", { skip }, async () => {
-  const w = await boot();
+test("a failing unit of work leaves nothing behind", { skip }, async () => {
+  const t = await boot();
   try {
+    const { w } = t;
     const u = await w.login("9600000003");
-    const before = structuredClone(w.p.users.get(u.user.userId));
-    await assert.rejects(() => w.tx(() => { const me = w.p.users.get(u.user.userId)!; w.p.createOrganization(me, "Half done", "TRADER"); w.p.updateProfile(me, { displayName: "mutated" }); throw new Error("boom"); }), /boom/);
-    assert.equal(w.p.orgs.size, 0);
-    assert.deepEqual(w.p.users.get(u.user.userId), before);
-    assert.equal((await w.store.pool.query("select count(*)::int n from organizations")).rows[0].n, 0);
-    assert.equal(w.p.audit.length, (await w.store.pool.query("select count(*)::int n from audit_log")).rows[0].n);
-    await w.tx(() => w.p.createOrganization(w.p.users.get(u.user.userId)!, "Fine", "TRADER"));
-    assert.equal((await w.store.pool.query("select count(*)::int n from organizations")).rows[0].n, 1);
-  } finally { await w.cleanup(); }
+    await assert.rejects(() => w.app.run(async (s) => {
+      s.actor = await w.app.services.identity.authenticate(s, u.token);
+      await w.app.services.identity.createOrganization(s, "Half done", "TRADER");
+      w.app.services.identity.updateProfile(s, { displayName: "mutated" });
+      throw new Error("boom");
+    }), /boom/);
+    assert.equal((await t.q("select count(*)::int n from organizations")).rows[0].n, 0);
+    assert.equal((await t.q("select count(*)::int n from audit_log")).rows[0].n, 0);
+    assert.equal((await w.as(u).identity.me()).displayName, "");
+    await w.as(u).identity.createOrganization("Fine", "TRADER");
+    assert.equal((await t.q("select count(*)::int n from organizations")).rows[0].n, 1);
+  } finally { await t.cleanup(); }
 });
 
-test("failed OTP attempts are committed (brute force protection survives errors and restarts)", { skip }, async () => {
-  const w = await boot();
+test("failed OTP attempts are committed (brute force protection survives errors and other processes)", { skip }, async () => {
+  const t = await boot();
   try {
-    await w.tx(() => w.p.requestOtp("9600000004", "dev"));
-    for (let i = 0; i < 5; i++) await assert.rejects(() => w.tx(() => w.p.verifyOtp("9600000004", "000000", "dev")), /invalid or expired/);
+    const { w } = t;
+    await w.sys.identity.requestOtp("9600000004", "dev");
+    for (let i = 0; i < 5; i++) await assert.rejects(() => w.sys.identity.verifyOtp("9600000004", "000000", "dev"), /invalid or expired/);
     const real = w.otps.get("+919600000004")!;
-    await assert.rejects(() => w.tx(() => w.p.verifyOtp("9600000004", real, "dev")), /invalid or expired/, "locked after 5 wrong attempts");
-    const { p2, s2 } = await w.restart();
-    await assert.rejects(() => s2.withTransaction(p2, () => p2.verifyOtp("9600000004", real, "dev")), /invalid or expired/, "lock persists across restart");
-    await s2.close();
-  } finally { await w.store.pool.end().catch(() => {}); const c = new PgStore({ connectionString: URL_ as string }); await c.pool.query(`drop schema ${w.schema} cascade`); await c.close(); }
+    await assert.rejects(() => w.sys.identity.verifyOtp("9600000004", real, "dev"), /invalid or expired/, "locked after 5 wrong attempts");
+    await assert.rejects(() => t.process().sys.identity.verifyOtp("9600000004", real, "dev"), /invalid or expired/, "the lock is shared by every process");
+  } finally { await t.cleanup(); }
+});
+
+test("concurrent acceptances from two processes are serialised on the lot row: exactly one wins, nothing is oversold", { skip }, async () => {
+  const t = await boot();
+  try {
+    const { w } = t;
+    const seller = await w.login("9600000010");
+    const buyers = await Promise.all([11, 12, 13, 14].map((n) => w.login(`96000000${n}`)));
+    await verified(w, seller, ...buyers);
+    const lot = await w.as(seller).lots.activate((await w.as(seller).lots.create(lotInput(w, { quantityTotal: "5000", partialFulfilmentAllowed: false }))).sellLotId);
+    const offers = [];
+    for (const b of buyers) offers.push(await w.as(b).offers.create({ sellLotId: lot.sellLotId, terms: sampleTerms({ quantity: "5000" }), expiresAt: hoursFromNow(w.clock, 6) }));
+    const procs = [w, t.process(), t.process(), t.process()];
+    const results = await Promise.allSettled(offers.map((o, i) => procs[i]!.as(seller).offers.accept(o.offerId)));
+    assert.equal(results.filter((r) => r.status === "fulfilled").length, 1, JSON.stringify(results.map((r) => r.status === "rejected" ? String(r.reason) : "ok")));
+    assert.ok(results.every((r) => r.status === "fulfilled" || /reserved this quantity|not active|INVALIDATED/i.test(String(r.reason))));
+    assert.equal((await t.q("select count(*)::int n from deals")).rows[0].n, 1);
+    assert.equal((await t.q("select quantity_reserved::text q from sell_lots")).rows[0].q, "5000");
+  } finally { await t.cleanup(); }
+});
+
+test("concurrent retries of one idempotent request across processes execute it once", { skip }, async () => {
+  const t = await boot();
+  try {
+    const { w } = t;
+    const u = await w.login("9600000030");
+    const procs = [w, t.process(), t.process()];
+    const servers = await Promise.all(procs.map(async (p) => { const srv = await createApp({ app: p.app }); await new Promise<void>((r) => srv.listen(0, r)); return srv; }));
+    try {
+      const post = (srv: (typeof servers)[number]) => fetch(`http://127.0.0.1:${(srv.address() as AddressInfo).port}/v1/organizations`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${u.token}`, "idempotency-key": "same" }, body: JSON.stringify({ name: "Once", kind: "FPO" }) });
+      const res = await Promise.all(servers.map(post));
+      const bodies = await Promise.all(res.map((r) => r.json()));
+      assert.deepEqual(res.map((r) => r.status), [201, 201, 201]);
+      assert.equal(new Set(bodies.map((b) => (b as { organizationId: string }).organizationId)).size, 1, "every retry returns the one outcome");
+      assert.equal((await t.q("select count(*)::int n from organizations")).rows[0].n, 1);
+    } finally { for (const s of servers) s.close(); }
+  } finally { await t.cleanup(); }
+});
+
+test("HTTP API on Postgres: durable, and a restarted process replays idempotent requests", { skip }, async () => {
+  const t = await boot();
+  const { w } = t;
+  const srv = await createApp({ app: w.app });
+  await new Promise<void>((r) => srv.listen(0, r));
+  const at = (s: typeof srv) => `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
+  const call = async (base: string, method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => { const r = await fetch(base + path, { method, headers: { "content-type": "application/json", ...headers }, ...(body ? { body: JSON.stringify(body) } : {}) }); return { status: r.status, json: (await r.json()) as any }; };
+  try {
+    await call(at(srv), "POST", "/v1/auth/otp/request", { phone: "9600000020" });
+    const v = await call(at(srv), "POST", "/v1/auth/otp/verify", { phone: "9600000020", code: w.otps.get("+919600000020") });
+    const h = { authorization: `Bearer ${v.json.token}` };
+    const a = await call(at(srv), "POST", "/v1/organizations", { name: "Durable FPO", kind: "FPO" }, { ...h, "idempotency-key": "k" });
+    assert.equal(a.status, 201);
+    assert.equal((await call(at(srv), "POST", "/v1/organizations", { name: "Bad", kind: "NOPE" }, { ...h, "idempotency-key": "k2" })).status, 422);
+    srv.close();
+    const srv2 = await createApp({ app: t.process().app });
+    await new Promise<void>((r) => srv2.listen(0, r));
+    try {
+      const again = await call(at(srv2), "POST", "/v1/organizations", { name: "Durable FPO", kind: "FPO" }, { ...h, "idempotency-key": "k" });
+      assert.deepEqual(again.json, a.json);
+      assert.equal((await t.q("select count(*)::int n from organizations")).rows[0].n, 1);
+      assert.equal((await call(at(srv2), "GET", "/v1/me", undefined, h)).status, 200, "session valid in the new process");
+    } finally { srv2.close(); }
+  } finally { srv.close(); await t.cleanup(); }
 });
 
 test("database enforces integrity independently of the application", { skip }, async () => {
-  const w = await boot();
+  const t = await boot();
   try {
-    const u = await w.login("9600000005");
-    const q = (sql: string, params: unknown[] = []) => w.store.pool.query(sql, params);
+    const u = await t.w.login("9600000005");
+    const q = t.q;
     // append-only log
-    await q("insert into audit_log (idx, doc) values (0, '{}')");
+    await q("insert into audit_log (doc) values ('{}')");
     await assert.rejects(() => q("update audit_log set doc = '{}'"), /append-only/);
     await assert.rejects(() => q("delete from audit_log"), /append-only/);
     // phone format and uniqueness
@@ -139,8 +201,7 @@ test("database enforces integrity independently of the application", { skip }, a
     await assert.rejects(() => q("update offers set doc = jsonb_set(doc, '{terms,quantity}', '\"9\"')"), /immutable/);
     await q("update offers set doc = doc || '{\"status\":\"COUNTERED\"}'");
     // deal card history can only grow
-    const card = { revision: 1, totalPaise: 10 };
-    const deal = { sellerId: "s", buyerId: "b", sellLotId: "l1", status: "AGREED", cards: [card], events: [{ seq: 1 }] };
+    const deal = { sellerId: "s", buyerId: "b", sellLotId: "l1", status: "AGREED", cards: [{ revision: 1, totalPaise: 10 }], events: [{ seq: 1 }] };
     await assert.rejects(() => q("insert into deals (key, doc) values ('d0', $1::jsonb)", [JSON.stringify({ ...deal, cards: [] })]), /deal_has_card/);
     await q("insert into deals (key, doc) values ('d1', $1::jsonb)", [JSON.stringify(deal)]);
     await assert.rejects(() => q("update deals set doc = jsonb_set(doc, '{cards,0,totalPaise}', '99')"), /immutable/);
@@ -152,69 +213,16 @@ test("database enforces integrity independently of the application", { skip }, a
     await q("insert into disputes (key, doc) values ('x1', $1::jsonb)", [JSON.stringify({ dealId: "d1", status: "RESOLVED", resolution: { outcome: "REJECTED" } })]);
     await assert.rejects(() => q("update disputes set doc = doc || '{\"x\":1}'"), /final/);
     await assert.rejects(() => q("insert into disputes (key, doc) values ('x2', $1::jsonb)", [JSON.stringify({ dealId: "d1", status: "OPEN" })]), /disputes_deal_uq/);
-  } finally { await w.cleanup(); }
-});
-
-test("only one writer process per database", { skip }, async () => {
-  const w = await boot();
-  try {
-    const second = new PgStore({ connectionString: URL_ as string, schema: w.schema });
-    await assert.rejects(() => second.acquireWriterLock(), /already holds the writer lock/);
-    await second.close();
-  } finally { await w.cleanup(); }
-});
-
-test("concurrent acceptances are serialised: exactly one wins, nothing is oversold", { skip }, async () => {
-  const w = await boot();
-  try {
-    const ops = await w.login("+919000000001");
-    ops.session.stepUpUntil = Date.now() + 1e9;
-    const seller = await w.login("9600000010");
-    const buyers = await Promise.all([11, 12, 13, 14].map((n) => w.login(`96000000${n}`)));
-    await w.tx(() => { for (const u of [seller.user, ...buyers.map((b) => b.user)]) { const c = w.p.submitClaim(u, "PERSON_IDENTITY", {}, ["d"]); w.p.decideClaim(ops.user, ops.session, c.claimId, "APPROVED", "OK"); } });
-    const lot = await w.tx(() => { const l = w.p.createLot(seller.user, { productId: "prod_mature_coconut", gradeAttributes: { husk: "W" }, gradeGroup: "FAQ", unit: "NUT", quantityTotal: "5000", partialFulfilmentAllowed: false, originMarketId: "market_pollachi", availableFrom: "2026-10-02T04:00:00Z", availableTo: "2026-10-06T04:00:00Z", expiresAt: hoursFromNow(w.clock, 72), fulfilment: { mode: "PICKUP", costsIncluded: ["X"], costsExcluded: [] }, priceExpectation: { inviteOffers: true } }); w.p.addLotPhoto(seller.user, l.sellLotId); return w.p.activateLot(seller.user, l.sellLotId); });
-    const offers = [];
-    for (const b of buyers) offers.push(await w.tx(() => w.p.createOffer(b.user, { sellLotId: lot.sellLotId, terms: sampleTerms({ quantity: "5000" }), expiresAt: hoursFromNow(w.clock, 6) })));
-    const results = await Promise.allSettled(offers.map((o) => w.tx(() => w.p.acceptOffer(seller.user, o.offerId))));
-    assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
-    assert.equal((await w.store.pool.query("select count(*)::int n from deals")).rows[0].n, 1);
-    assert.equal((await w.store.pool.query("select quantity_reserved::text q from sell_lots")).rows[0].q, "5000");
-  } finally { await w.cleanup(); }
-});
-
-test("HTTP API on Postgres: durable, idempotent retries replay the original, reads skip entity diffing", { skip }, async () => {
-  const w = await boot();
-  const srv = await createApp({ platform: w.p, store: w.store });
-  await new Promise<void>((r) => srv.listen(0, r));
-  const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
-  const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => { const r = await fetch(base + path, { method, headers: { "content-type": "application/json", ...headers }, ...(body ? { body: JSON.stringify(body) } : {}) }); return { status: r.status, json: (await r.json()) as any }; };
-  try {
-    await call("POST", "/v1/auth/otp/request", { phone: "9600000020" });
-    const v = await call("POST", "/v1/auth/otp/verify", { phone: "9600000020", code: w.otps.get("+919600000020") });
-    const h = { authorization: `Bearer ${v.json.token}` };
-    const a = await call("POST", "/v1/organizations", { name: "Durable FPO", kind: "FPO" }, { ...h, "idempotency-key": "k" });
-    assert.equal(a.status, 201);
-    const bad = await call("POST", "/v1/organizations", { name: "Bad", kind: "NOPE" }, { ...h, "idempotency-key": "k2" });
-    assert.equal(bad.status, 422);
-    // a "restart" replays the same idempotent request to the same answer
-    srv.close();
-    const { s2, p2 } = await w.restart();
-    const srv2 = await createApp({ platform: p2, store: s2 });
-    await new Promise<void>((r) => srv2.listen(0, r));
-    const base2 = `http://127.0.0.1:${(srv2.address() as AddressInfo).port}`;
-    const r = await fetch(base2 + "/v1/organizations", { method: "POST", headers: { ...h, "content-type": "application/json", "idempotency-key": "k" }, body: JSON.stringify({ name: "Durable FPO", kind: "FPO" }) });
-    assert.deepEqual(await r.json(), a.json);
-    assert.equal(p2.orgs.size, 1);
-    assert.equal((await fetch(base2 + "/v1/me", { headers: h })).status, 200, "session still valid after restart");
-    srv2.close();
-    await s2.pool.query(`drop schema ${w.schema} cascade`); await s2.close();
-  } finally { srv.close(); }
+    // concurrent duplicate notifications collapse into one
+    await q("insert into notifications (doc) values ('{\"userId\":\"u\",\"dedupeKey\":\"k\"}')");
+    await assert.rejects(() => q("insert into notifications (doc) values ('{\"userId\":\"u\",\"dedupeKey\":\"k\"}')"), /notifications_dedupe_uq/);
+  } finally { await t.cleanup(); }
 });
 
 test("Release D integrity: settlements balance, one booked quote, immutable inspection results and aggregates", { skip }, async () => {
-  const w = await boot();
+  const t = await boot();
   try {
-    const q = (sql: string, params: unknown[] = []) => w.store.pool.query(sql, params);
+    const q = t.q;
     const line = (g: number, d: number) => ({ memberLotId: `m${g}`, grossPaise: g, deductionPaise: d, netPaise: g - d });
     const settle = (over: Record<string, unknown> = {}) => ({ dealId: "d1", organizationId: "o", status: "DRAFT", grossPaise: 100, deductionTotalPaise: 10, netPaise: 90, lines: [line(60, 6), line(40, 4)], ...over });
     await assert.rejects(() => q("insert into settlements (key, doc) values ('s0', $1::jsonb)", [JSON.stringify(settle({ lines: [line(60, 6), line(41, 4)] }))]), /settlement_lines_balance/);
@@ -246,56 +254,58 @@ test("Release D integrity: settlements balance, one booked quote, immutable insp
     await assert.rejects(() => q("insert into media (key, doc) values ('x', $1::jsonb)", [JSON.stringify({ ownerId: "u", status: "APPROVED", purpose: "LOT_PHOTO", contentType: "application/x-msdownload" })]), /media_content_type/);
     await assert.rejects(() => q("insert into deals (key, doc) values ('dd', $1::jsonb)", [JSON.stringify({ sellerId: "s", buyerId: "b", sellLotId: "l", status: "WEIRD", cards: [{}], events: [] })]), /deal_status/);
     await q("insert into deals (key, doc) values ('dd', $1::jsonb)", [JSON.stringify({ sellerId: "s", buyerId: "b", sellLotId: "l", status: "INSPECTION_PENDING", cards: [{}], events: [] })]);
-  } finally { await w.cleanup(); }
+  } finally { await t.cleanup(); }
 });
 
-test("Release D end to end on Postgres: settlement is stored balanced and survives restart", { skip }, async () => {
-  const w = await boot();
-  let cleanup = w.cleanup;
+test("Release D end to end on Postgres: settlement is stored balanced and readable from another process", { skip }, async () => {
+  const t = await boot();
   try {
-    const ops = await w.login("+919000000001"); ops.session.stepUpUntil = Date.now() + 1e9;
+    const { w } = t;
     const mgr = await w.login("9610000001"), fin = await w.login("9610000002"), buyer = await w.login("9610000003");
-    const idv = (u: { userId: string }, type: "ORGANIZATION_EXISTENCE" | "PERSON_IDENTITY") => w.tx(() => { const c = w.p.submitClaim(w.p.users.get(u.userId)!, type, {}, ["d"]); w.p.decideClaim(ops.user, ops.session, c.claimId, "APPROVED", "OK"); });
-    await idv(mgr.user, "ORGANIZATION_EXISTENCE"); await idv(buyer.user, "PERSON_IDENTITY");
-    const me = () => w.p.users.get(mgr.user.userId)!;
-    const org = await w.tx(() => w.p.createOrganization(me(), "FPO", "FPO"));
-    await w.tx(() => { mgr.session.stepUpUntil = Date.now() + 1e9; w.p.addMember(me(), org.organizationId, fin.user.userId, "OWNER", mgr.session); });
-    const lots = await w.tx(() => ["Ravi:6000", "Meena:4000"].map((x) => { const [n, q] = x.split(":"); return w.p.fx.addMemberLot(me(), org.organizationId, { memberName: n!, productId: "prod_mature_coconut", gradeGroup: "FAQ", unit: "NUT", quantity: q!, originMarketId: "market_pollachi", quality: { husk: "W" } }); }));
-    await w.tx(() => lots.forEach((l) => w.p.fx.reviewMemberLot(w.p.users.get(fin.user.userId)!, l.memberLotId, true)));
-    const { sellLot } = await w.tx(() => w.p.fx.buildAggregate(me(), org.organizationId, { memberLotIds: lots.map((l) => l.memberLotId), availableFrom: "2026-10-02T04:00:00Z", availableTo: "2026-10-09T04:00:00Z", expiresAt: hoursFromNow(w.clock, 100), fulfilment: { mode: "PICKUP", costsIncluded: ["X"], costsExcluded: [] }, priceExpectation: { inviteOffers: true } }));
-    await w.tx(() => { w.p.addLotPhoto(me(), sellLot.sellLotId); w.p.activateLot(me(), sellLot.sellLotId); });
-    const offer = await w.tx(() => w.p.createOffer(w.p.users.get(buyer.user.userId)!, { sellLotId: sellLot.sellLotId, terms: sampleTerms({ quantity: "10000", unitPricePaise: 3001 }), expiresAt: hoursFromNow(w.clock, 6) }));
-    const deal = await w.tx(() => w.p.acceptOffer(me(), offer.offerId));
-    await w.tx(() => { w.p.confirmDelivery(me(), deal.dealId); w.p.acceptDelivery(w.p.users.get(buyer.user.userId)!, deal.dealId); });
-    const s = await w.tx(() => w.p.fx.draftSettlement(me(), deal.dealId, [{ type: "COMMISSION", amountPaise: 33_333 }]));
-    const row = (await w.store.pool.query("select gross_paise::int g, deduction_total_paise::int d, net_paise::int n, status from settlements")).rows[0];
-    assert.deepEqual([row.g, row.d, row.n, row.status], [30_010_000 / 1, 33_333, 30_010_000 - 33_333, "DRAFT"]);
-    await w.tx(() => w.p.fx.approveSettlement(w.p.users.get(fin.user.userId)!, s.settlementId));
-    const { s2, p2 } = await w.restart();
-    cleanup = async () => { await s2.pool.query(`drop schema ${w.schema} cascade`); await s2.close(); };
-    const loaded = p2.fx.settlements.get(s.settlementId)!;
+    await w.verify(mgr, "ORGANIZATION_EXISTENCE"); await w.verify(buyer, "PERSON_IDENTITY");
+    const org = await w.as(mgr).identity.createOrganization("FPO", "FPO");
+    await w.sys.identity.requestOtp(mgr.user.phone, "step");
+    await w.as(mgr).identity.stepUp(w.otps.get(mgr.user.phone)!);
+    await w.as(mgr).identity.addMember(org.organizationId, fin.user.userId, "OWNER");
+    const lots = [];
+    for (const [n, q] of [["Ravi", "6000"], ["Meena", "4000"]] as const) lots.push(await w.as(mgr).fpo.addMemberLot(org.organizationId, { memberName: n, productId: "prod_mature_coconut", gradeGroup: "FAQ", unit: "NUT", quantity: q, originMarketId: "market_pollachi", quality: { husk: "W" } }));
+    for (const l of lots) await w.as(fin).fpo.reviewMemberLot(l.memberLotId, true);
+    const { sellLot } = await w.as(mgr).fpo.buildAggregate(org.organizationId, { memberLotIds: lots.map((l) => l.memberLotId), availableFrom: "2026-10-02T04:00:00Z", availableTo: "2026-10-09T04:00:00Z", expiresAt: hoursFromNow(w.clock, 100), fulfilment: { mode: "PICKUP", costsIncluded: ["X"], costsExcluded: [] }, priceExpectation: { inviteOffers: true } });
+    await w.as(mgr).lots.addPhoto(sellLot.sellLotId);
+    await w.as(mgr).lots.activate(sellLot.sellLotId);
+    const offer = await w.as(buyer).offers.create({ sellLotId: sellLot.sellLotId, terms: sampleTerms({ quantity: "10000", unitPricePaise: 3001 }), expiresAt: hoursFromNow(w.clock, 6) });
+    const deal = await w.as(mgr).offers.accept(offer.offerId);
+    await w.as(mgr).deals.confirmDelivery(deal.dealId);
+    await w.as(buyer).deals.acceptDelivery(deal.dealId);
+    const s = await w.as(mgr).fpo.draftSettlement(deal.dealId, [{ type: "COMMISSION", amountPaise: 33_333 }]);
+    const row = (await t.q("select gross_paise::int g, deduction_total_paise::int d, net_paise::int n, status from settlements")).rows[0];
+    assert.deepEqual([row.g, row.d, row.n, row.status], [30_010_000, 33_333, 30_010_000 - 33_333, "DRAFT"]);
+    await w.as(fin).fpo.approveSettlement(s.settlementId);
+    const p2 = t.process();
+    const loaded = await p2.as(fin).fpo.settlement(s.settlementId);
     assert.equal(loaded.status, "APPROVED");
     assert.equal(loaded.lines.reduce((a, l) => a + l.netPaise, 0), loaded.netPaise);
-    assert.match(p2.fx.exportSettlementCsv(p2.users.get(fin.user.userId)!, s.settlementId), /Ravi/);
-  } finally { await cleanup(); }
+    assert.match(await p2.as(fin).fpo.exportSettlementCsv(s.settlementId), /Ravi/);
+  } finally { await t.cleanup(); }
 });
 
 test("outbox rows commit atomically with the state change and vanish on rollback", { skip }, async () => {
-  const w = await boot();
+  const t = await boot();
   try {
-    const a = await w.login("9620000001"), b = await w.login("9620000002");
-    const org = await w.tx(() => w.p.createOrganization(w.p.users.get(a.user.userId)!, "O", "TRADER"));
-    const before = (await w.store.pool.query("select count(*)::int n from outbox")).rows[0].n;
-    await assert.rejects(() => w.tx(() => { w.p.notify(b.user.userId, "SMS", "claim.approved", {}, "k1"); throw new Error("boom"); }), /boom/);
-    assert.equal((await w.store.pool.query("select count(*)::int n from outbox")).rows[0].n, before, "rolled back with the failed request");
-    assert.equal(w.p.outbox.size, before);
-    await w.tx(() => { w.p.notify(b.user.userId, "SMS", "claim.approved", {}, "k1"); });
-    assert.equal((await w.store.pool.query("select count(*)::int n from outbox")).rows[0].n, before + 1);
-    const id = (await w.store.pool.query("select key from outbox where doc->>'template' = 'claim.approved'")).rows[0].key as string;
-    await w.tx(() => w.p.claimOutbox(5));
-    await w.tx(() => w.p.ackOutbox(id, true));
-    await assert.rejects(() => w.store.pool.query("update outbox set doc = doc || '{\"status\":\"PENDING\"}' where key = $1", [id]), /final/);
-    await assert.rejects(() => w.store.pool.query("update outbox set doc = jsonb_set(doc, '{data}', '{\"x\":1}') where key = $1", [id]), /immutable|final/);
-    void org;
-  } finally { await w.cleanup(); }
+    const { w } = t;
+    const b = await w.login("9620000002");
+    const count = async () => (await t.q("select count(*)::int n from outbox")).rows[0].n as number;
+    const before = await count();
+    await assert.rejects(() => w.run(async (s) => { await w.app.services.notifier.notify(s, b.user.userId, "SMS", "claim.approved", {}, "k1"); throw new Error("boom"); }), /boom/);
+    assert.equal(await count(), before, "rolled back with the failed unit of work");
+    assert.equal(await w.sys.notifier.notify(b.user.userId, "SMS", "claim.approved", {}, "k1"), true);
+    assert.equal(await count(), before + 1);
+    const id = (await t.q("select key from outbox where doc->>'template' = 'claim.approved'")).rows[0].key as string;
+    // two workers never lease the same message
+    const [x, y] = await Promise.all([w.sys.notifier.claim(5), t.process().sys.notifier.claim(5)]);
+    assert.equal([...x, ...y].filter((m) => m.notificationId === id).length, 1);
+    await w.sys.notifier.ack(id, true);
+    await assert.rejects(() => t.q("update outbox set doc = doc || '{\"status\":\"PENDING\"}' where key = $1", [id]), /final/);
+    await assert.rejects(() => t.q("update outbox set doc = jsonb_set(doc, '{data}', '{\"x\":1}') where key = $1", [id]), /immutable|final/);
+  } finally { await t.cleanup(); }
 });

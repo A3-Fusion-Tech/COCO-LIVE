@@ -25,7 +25,6 @@ services:
       PORT: "4000"
       TRUST_PROXY: "1"
       DATABASE_URL: postgresql://livecoco:livecoco@db:5432/livecoco
-      INTERNAL_API_TOKEN: local-dev-internal-token
       UPLOAD_SIGNING_SECRET: local-dev-upload-secret
       OBJECT_STORAGE_DIR: /data/objects
       API_BASE_URL: http://localhost:3000   # uploads are sent through the web gateway
@@ -37,12 +36,13 @@ services:
   worker:
     image: node:22
     working_dir: /app
-    command: sh -c "npm ci && node apps/worker/src/main.ts"
+    # Works on the database directly (no internal HTTP API); start as many as you like.
+    command: sh -c "npm ci && node --import tsx apps/worker/src/main.ts"
     environment:
-      API_BASE_URL: http://api:4000
-      INTERNAL_API_TOKEN: local-dev-internal-token
+      DATABASE_URL: postgresql://livecoco:livecoco@db:5432/livecoco
+      OBJECT_STORAGE_DIR: /data/objects
       DATA_GOV_IN_API_KEY: ${DATA_GOV_IN_API_KEY:-}
-    volumes: [".:/app"]
+    volumes: [".:/app", "objects:/data/objects"]
     depends_on: [api]
 
   web:

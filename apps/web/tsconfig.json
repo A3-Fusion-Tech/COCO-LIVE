@@ -12,6 +12,6 @@
     "types": ["node"],
     "plugins": [{ "name": "next" }]
   },
-  "include": ["next-env.d.ts", "app/**/*.ts", "app/**/*.tsx", "src/**/*.ts", "proxy.ts", ".next/types/**/*.ts"],
+  "include": ["next-env.d.ts", "app/**/*.ts", "app/**/*.tsx", "lib/**/*.ts", "proxy.ts", ".next/types/**/*.ts"],
   "exclude": ["node_modules"]
 }

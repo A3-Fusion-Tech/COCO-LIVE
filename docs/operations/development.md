@@ -27,7 +27,7 @@ The first implementation pull request should:
 ## 4. Database workflow
 
 - Start PostgreSQL with `docker compose up -d db`; set `DATABASE_URL`.
-- `npm run db:migrate` applies migrations; the API also migrates at start and takes a writer lock (a second API process on the same database refuses to start).
+- `npm run db:migrate` applies migrations; the API and worker also migrate at start. Any number of API and worker processes can share one database ([ADR-010](../decisions/010-stateless-services-row-locked-units-of-work.md)).
 - `npm run db:reset` drops and recreates the schema of an explicitly local database only; `npm run seed` adds synthetic actors.
 - Tests that need Postgres create and drop an isolated schema per test.
 

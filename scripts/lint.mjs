@@ -11,10 +11,11 @@ async function walk(dir) {
     const p = join(dir, e.name);
     if (e.isDirectory()) await walk(p);
     else if ([".ts", ".tsx", ".mjs"].includes(extname(e.name))) {
-      (await readFile(p, "utf8")).split("\n").forEach((line, i) => {
+      // CRLF checkouts (Windows) and backslash paths are normalised so the rules mean the same everywhere.
+      (await readFile(p, "utf8")).split(/\r?\n/).forEach((line, i) => {
         if (/\s+$/.test(line)) failures.push(`${p}:${i + 1} trailing whitespace`);
         if (/\bdebug" + "ger\b/.test(line)) failures.push(`${p}:${i + 1} debug statement`);
-        if (/console\.log/.test(line) && !entry.test(p)) failures.push(`${p}:${i + 1} console.log outside an entrypoint`);
+        if (/console\.log/.test(line) && !entry.test(p.replaceAll("\\", "/"))) failures.push(`${p}:${i + 1} console.log outside an entrypoint`);
       });
     }
   }
